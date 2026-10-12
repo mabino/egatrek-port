@@ -1,0 +1,21 @@
+[project]
+name = "trekre"
+version = "0.1.0"
+description = "Reverse-engineering tools for EGA Trek (1988, Nels Anderson)"
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = []
+
+[project.scripts]
+trekre = "trekre.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["gamedata: needs the original TREK.EXE (set TREK_DATA)"]

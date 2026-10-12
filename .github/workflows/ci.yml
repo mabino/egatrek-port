@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        # arm64 Linux is the closest container-friendly stand-in for Apple Silicon.
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build CI image
+        run: docker build -f docker/ci.Dockerfile -t trek-ci docker
+      - name: Test (Python tools + C++ engine)
+        run: |
+          docker run --rm -v "$PWD:/src:ro" trek-ci sh -c '
+            set -e
+            cp -r /src /tmp/w && cd /tmp/w
+            uv --directory tools/trekre run pytest -q
+            cmake --preset linux -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang
+            cmake --build --preset linux
+            ctest --preset linux'
+
+  wasm:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Emscripten image
+        run: docker build -f docker/wasm.Dockerfile -t trek-wasm docker
+      - name: Build and test (Emscripten)
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src -u "$(id -u):$(id -g)" -e HOME=/tmp trek-wasm sh -c '
+            set -e
+            cmake --preset wasm
+            cmake --build --preset wasm
+            node build/wasm/engine/trek_tests.js'

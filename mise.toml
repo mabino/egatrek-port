@@ -1,0 +1,9 @@
+[tools]
+python = "3.12"
+uv = "latest"
+cmake = "3.31"
+ninja = "latest"
+
+[env]
+# Folder holding the original TREK.EXE, TREK.DOC and TREK.REF.
+TREK_DATA = "{{config_root}}/.."
