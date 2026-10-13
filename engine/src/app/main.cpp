@@ -129,7 +129,16 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
         return SDL_APP_FAILURE;
     }
     // EGA's 640x350 filled a 4:3 monitor, so pixels are 1.37 times taller than wide.
-    if (!SDL_CreateWindowAndRenderer("EGA Trek", 1280, 960, SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_RESIZABLE,
+#if defined(__EMSCRIPTEN__)
+    const int init_w = 640;
+    const int init_h = 480;
+    const SDL_WindowFlags init_flags = SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL;
+#else
+    const int init_w = 1280;
+    const int init_h = 960;
+    const SDL_WindowFlags init_flags = SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_RESIZABLE;
+#endif
+    if (!SDL_CreateWindowAndRenderer("EGA Trek", init_w, init_h, init_flags,
                                      &app->window, &app->renderer)) {
         SDL_Log("window creation failed: %s", SDL_GetError());
         return SDL_APP_FAILURE;
