@@ -6,6 +6,9 @@ The port statically decompiles and recompiles the original 16-bit real-mode MS-D
 
 This repository contains **only clean-room engine code, tools, and build infrastructure**. No copyrighted game files or derived generated code are committed to the repository. The recompiler processes your legally owned copy of `TREK.EXE` at build time.
 
+> [!NOTE]
+> **Disclaimer**: *Star Trek* is a registered trademark of Paramount Global / CBS Studios. This project is an independent, non-commercial educational and digital preservation research project. It is not affiliated with, endorsed by, or sponsored by Paramount, CBS, or Nels Anderson. No copyrighted game binaries, media assets, or decompiled code are distributed in this repository.
+
 ---
 
 ## Architecture & Design
