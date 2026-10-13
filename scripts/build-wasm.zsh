@@ -12,7 +12,7 @@ fi
 docker run --rm -v "$ROOT:/src" -w /src -u "$(id -u):$(id -g)" -e HOME=/tmp $IMAGE sh -c '
   set -e
   cmake --preset wasm
-  cmake --build --preset wasm
+  cmake --build --preset wasm -- -j 2
   node build/wasm/engine/trek_tests.js'
 print "Built: $ROOT/build/wasm/engine/egatrek.html"
 if [[ ${1:-} == --serve ]]; then

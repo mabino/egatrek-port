@@ -41,6 +41,32 @@ Roles in *italics* are inferred from decompiled code and still need confirmation
 | `1D90` | 7,856 | System unit |
 | `1F7B` | 3,152 | Data segment (typed constants; globals follow in BSS) |
 
+## Static Recompiler Architecture
+
+The port uses a hybrid ahead-of-time (AOT) static recompiler (`trekre recomp`) and an emulated 1 MB real-mode 8086 CPU (`trek::dos::Machine`):
+
+1. **Decoder & CFG Discovery (`trekre.cfg`)**:
+   - Starting from `0000:0EB0`, the recompiler decodes 8086 instructions using recursive descent.
+   - Code is partitioned into basic blocks bounded by jumps, calls, returns, and interrupt instructions.
+   - Blocks are grouped by segment into 16 C++ translation units (`seg_XXXX.cpp`), each compiled as a single switch-dispatch loop.
+
+2. **Control-Flow Hints (`trekre.hints`)**:
+   - **No-return procedures (`NORETURN`)**: `1D90:01E9`, `1D90:01F0`, and `1D90:01F3` are Turbo Pascal `RunError` and `Halt` routines. Marking them non-returning prevents recursive-descent disassembly from mistaking trailing data bytes for executable code.
+   - **Driver seeds (`seeds()`)**: `EGAVGA.BGI` code begins at `0x0AAB:0x00A0`; the BGI interface table at `0x0AAB:0x0016` contains 29 near pointers which are seeded into the CFG.
+   - **Graph driver relocation (`MOVED`)**: During BGI startup, `Graph.InitGraph` copies its internal driver interface from `1A0F:2106` down to `1C1F:0000` (length `0x1703` bytes) and executes it with `CS=1C1F`. The recompiler decodes this code in its relocated position.
+   - **Runtime-discovered indirect entries (`FOUND_AT_RUN_TIME`)**: Addresses reached via function pointers computed at run time (e.g. text file driver hooks at `196C:0038`, `196C:0078`, `196C:00B8`, and Graph internal helpers in `1C1F`).
+
+3. **Self-Modifying / Dynamic Code Sites (`DYNAMIC`)**:
+   Two instructions in `TREK.EXE` are patched at run time:
+   - `0x0AAB:0x0010`: The BGI driver's emulation entry point, initially a `RET` (`0xC3`), is dynamically overwritten by `Graph` with a far jump (`0xEA ...`).
+   - `0x1521:0x0099`: Turbo Pascal's `Dos.Intr` dispatcher. It contains an `INT 00` (`CD 00`) opcode whose second byte is dynamically overwritten in memory with the desired interrupt number immediately before execution.
+   The recompiler isolates these instruction boundaries and hands them off to `Machine::step()` to interpret in RAM.
+
+4. **Cooperative Delay & Audio Emulation**:
+   - **Turbo Pascal `Crt.Delay` Hook**: `197F:02E9` is an uncalibrated CPU busy loop. In native execution, `Machine::run` intercepts `pc == 0x29AD9` (`handle_delay()`), recording `delay_end_ms = now_ms + ms` and yielding back to `SDL_AppIterate`. This lets the host maintain 60 FPS presentation, render in-flight phaser and torpedo visuals, and keep audio streaming across frames.
+   - **PC Speaker & PIT Channels**: Channel 2 divisor writes to port `42h` and speaker gate toggles on port `61h` record timestamped square-wave events in `dos::Speaker`. The PIT counter read toggle (`pit_read_hi_`) is separate from divisor writes (`pit_lo_written_`) to avoid state corruption.
+   - **Title Music Optimization**: The Star Trek theme table at `1F7B:06A9` contains `(36, 0) (4, 0) (4, 74) ...`. The initial two notes (duration 36 and 4) were rests totaling 80 timer ticks (~4.4 seconds of silence) to mask 1988 EGA vector drawing latency. In `Machine::reset()`, both rests are shortened to 1 tick (~200 ms total), so the theme fanfare begins promptly when the title screen appears.
+
 ## Game state (data segment `1F7B`, tentative)
 
 - `0x13B4`: galaxy as `array[1..8,1..8] of Integer`, encoded *Klingons×100 + bases×10 + stars*
@@ -65,13 +91,10 @@ Roles in *italics* are inferred from decompiled code and still need confirmation
 
 ## Porting notes
 
-- **Reals.** Game logic does arithmetic in Turbo Pascal's 48-bit `Real`. To reproduce the original
-  exactly (scores, hit damage, random sequences fed through `Random`), the port needs a bit-exact
-  `Real48` type rather than `double`.
-- **Strings.** Turbo Pascal passes string literals as `MOV DI,offset; PUSH CS; PUSH DI`. Ghidra treats
-  the offset as a plain immediate, so `analyze.py` adds the data references itself (579 linked).
-- **Assets.** The only assets are the Triplex font and the BGI driver inside the executable. The port
-  reads the font from the user's `TREK.EXE`. The driver is replaced by `EgaSurface`. The BIOS 8×8 text
-  font, which BGI's `DefaultFont` uses, is not in the executable.
-- **Display.** 640×350 in 16 colours, shown at 4:3 (non-square pixels).
-- **Saves.** `TREK.SAV` in the game folder. *Format still to be decoded.*
+- **Reals.** Game logic does arithmetic in Turbo Pascal's 48-bit `Real`. The recompiled code evaluates
+  real operations directly via the original Turbo Pascal runtime in `seg_1d90`.
+- **Strings.** Turbo Pascal passes string literals as `MOV DI,offset; PUSH CS; PUSH DI`.
+- **Display.** 640×350 in 16 colours, presented at 4:3 with integer or pixel-art scaling.
+- **Saves.** `TREK.SAV` in the host save directory (Application Support on macOS, IDBFS in browser).
+  Contains the 14,400-byte data segment image preserving full galaxy and vessel state.
+

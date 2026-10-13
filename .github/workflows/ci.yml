@@ -37,5 +37,5 @@ jobs:
           docker run --rm -v "$PWD:/src" -w /src -u "$(id -u):$(id -g)" -e HOME=/tmp trek-wasm sh -c '
             set -e
             cmake --preset wasm
-            cmake --build --preset wasm
+            cmake --build --preset wasm -- -j 2
             node build/wasm/engine/trek_tests.js'

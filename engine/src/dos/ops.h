@@ -229,7 +229,7 @@ inline bool idiv16(Cpu& c, std::uint16_t b) {
 
 inline void cbw(Cpu& c) { c.r[AX] = static_cast<std::uint16_t>(static_cast<std::int8_t>(c.r[AX] & 0xFF)); }
 inline void cwd(Cpu& c) { c.r[DX] = (c.r[AX] & 0x8000) ? 0xFFFF : 0; }
-inline void lahf(Cpu& c) { c.set8(4, static_cast<std::uint8_t>(c.pack() & 0xD5 | 0x02)); }
+inline void lahf(Cpu& c) { c.set8(4, static_cast<std::uint8_t>((c.pack() & 0xD5) | 0x02)); }
 inline void sahf(Cpu& c) {
     const std::uint8_t ah = c.get8(4);
     c.cf = ah & 1, c.pf = ah & 4, c.af = ah & 0x10, c.zf = ah & 0x40, c.sf = ah & 0x80;

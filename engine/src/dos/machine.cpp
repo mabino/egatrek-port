@@ -91,6 +91,17 @@ void Machine::reset() {
     state_ = State::Running;
     keys_.clear();
     files_.clear();
+    delay_active_ = false;
+    delay_end_ms_ = 0.0;
+    pit_read_hi_ = false;
+
+    // Shorten title music initial rest from 4.4 seconds to ~200 ms so fanfare plays promptly.
+    const std::uint32_t music = lin(program_.load_segment + 0x1F7B, 0x06A9);
+    if (music + 3 < mem_.size() && mem_[music] == 36 && mem_[music + 1] == 0 &&
+        mem_[music + 2] == 4 && mem_[music + 3] == 0) {
+        mem_[music] = 1;
+        mem_[music + 2] = 1;
+    }
 }
 
 void Machine::fail(std::string why) {
@@ -132,6 +143,11 @@ Machine::State Machine::run(std::int64_t slice, double now_ms) {
         if (pc >= stub_lo && pc < stub_hi) {
             if (!run_stub(static_cast<int>((pc - stub_lo) / 4))) break;
             --budget;
+            continue;
+        }
+        const std::uint32_t delay_pc = lin(program_.load_segment + 0x197F, 0x02E9);
+        if (!deterministic_ticks_ && pc == delay_pc) {
+            if (handle_delay()) break;
             continue;
         }
         if (const auto* seg = segment_for(pc); seg && !interpret_only_ && is_block(pc)) {
@@ -242,8 +258,9 @@ void Machine::deliver_timer() {
     const auto hooked = [this](int n) {
         return rd16(0, static_cast<std::uint16_t>(n * 4 + 2)) != kBiosSeg;
     };
-    // One interrupt per slice is enough for this game; handlers just count.
-    if (hooked(0x1C)) interrupt(0x1C, cpu.pc);
+    if (hooked(0x1C)) {
+        interrupt(0x1C, cpu.pc);
+    }
     if (hooked(0x08)) interrupt(0x08, cpu.pc);
 }
 
@@ -264,6 +281,27 @@ void Machine::video_write(std::uint32_t a, std::uint8_t v) {
     mem_[a] = v;
 }
 
+bool Machine::handle_delay() {
+    if (delay_active_) {
+        if (now_ms_ < delay_end_ms_) {
+            budget = 0;
+            return true;
+        }
+        delay_active_ = false;
+        far_return(2);
+        return false;
+    }
+    const std::uint16_t ms = rd16(cpu.s[SS], static_cast<std::uint16_t>(cpu.r[SP] + 4));
+    if (ms == 0) {
+        far_return(2);
+        return false;
+    }
+    delay_active_ = true;
+    delay_end_ms_ = now_ms_ + ms;
+    budget = 0;
+    return true;
+}
+
 std::uint8_t Machine::in8(std::uint16_t port) {
     if (port >= 0x3B0 && port <= 0x3DF) return ega_.port_in(port);
     switch (port) {
@@ -271,8 +309,8 @@ std::uint8_t Machine::in8(std::uint16_t port) {
         case 0x42: {
             // A counter that moves on every read keeps calibration loops finite.
             pit_counter_ = static_cast<std::uint16_t>(pit_counter_ - 37);
-            const bool hi = pit_lo_written_;
-            pit_lo_written_ = !pit_lo_written_;
+            const bool hi = pit_read_hi_;
+            pit_read_hi_ = !pit_read_hi_;
             return hi ? static_cast<std::uint8_t>(pit_counter_ >> 8) : static_cast<std::uint8_t>(pit_counter_);
         }
         case 0x60: return keys_.empty() ? 0 : static_cast<std::uint8_t>(keys_.front() >> 8);

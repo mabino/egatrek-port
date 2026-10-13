@@ -204,7 +204,7 @@ SDL_AppResult SDL_AppIterate(void* state) {
         app->machine->ega().render(app->argb, app->machine->mem() + 0xB8000, trek::dos::kRomFont8x8, blink);
         if (app->audio) {
             app->samples.clear();
-            app->machine->speaker().render(app->samples, kSampleRate, now - 40.0);
+            app->machine->speaker().render(app->samples, kSampleRate, now);
             if (!app->samples.empty())
                 SDL_PutAudioStreamData(app->audio, app->samples.data(),
                                        static_cast<int>(app->samples.size() * sizeof(float)));

@@ -8,5 +8,8 @@ APP="$ROOT/build/macos/engine/EGA Trek.app"
 IDENTITY=${TREK_SIGN_IDENTITY:--}
 codesign --force --deep --options runtime --timestamp=none --sign "$IDENTITY" "$APP"
 mkdir -p $ROOT/dist
+rm -rf "$ROOT/dist/EGA Trek.app"
+cp -a "$APP" "$ROOT/dist/EGA Trek.app"
 ditto -c -k --keepParent "$APP" "$ROOT/dist/EGA Trek.zip"
-print "Packaged: $ROOT/dist/EGA Trek.zip (signed with: $IDENTITY)"
+print "Packaged: $ROOT/dist/EGA Trek.app and $ROOT/dist/EGA Trek.zip (signed with: $IDENTITY)"
+

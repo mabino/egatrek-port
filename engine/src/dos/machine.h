@@ -247,8 +247,13 @@ private:
     std::optional<double> clock_override_;
     std::uint32_t ticks_ = 0, delivered_ticks_ = 0;
 
+    bool handle_delay();
+
     std::uint8_t pit_mode_ = 0, pit_latch_lo_ = 0;
     bool pit_lo_written_ = false;
+    bool pit_read_hi_ = false;
+    bool delay_active_ = false;
+    double delay_end_ms_ = 0.0;
     std::uint16_t pit2_divisor_ = 0;
     std::uint8_t port61_ = 0;
     std::uint16_t pit_counter_ = 0xFFFF;

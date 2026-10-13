@@ -33,7 +33,12 @@ if(TREK_GENERATED_SOURCES)
   add_library(trek_game STATIC ${TREK_GENERATED_SOURCES})
   target_link_libraries(trek_game PUBLIC trek_core)
   # Huge functions of straight-line code: optimise lightly to keep build times sane.
-  target_compile_options(trek_game PRIVATE -O1 -w)
+  # Under Emscripten, -O0 keeps compiler memory low enough to build in containers.
+  if(EMSCRIPTEN)
+    target_compile_options(trek_game PRIVATE -O0 -w)
+  else()
+    target_compile_options(trek_game PRIVATE -O1 -w)
+  endif()
   message(STATUS "EGA Trek: building recompiled game from ${TREK_GENERATED_DIR}")
   if(NOT EMSCRIPTEN)
     add_executable(trek_headless src/app/headless.cpp)
@@ -46,7 +51,16 @@ else()
 endif()
 
 if(TREK_BUILD_APP)
-  add_executable(egatrek MACOSX_BUNDLE src/app/main.cpp src/app/host_keys.cpp)
+  set(TREK_APP_SOURCES src/app/main.cpp src/app/host_keys.cpp)
+  if(APPLE AND NOT EMSCRIPTEN)
+    set(MACOSX_BUNDLE_ICON_FILE "AppIcon.icns")
+    set(TREK_APP_ICON "${CMAKE_CURRENT_SOURCE_DIR}/resources/AppIcon.icns")
+    if(EXISTS "${TREK_APP_ICON}")
+      set_source_files_properties("${TREK_APP_ICON}" PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
+      list(APPEND TREK_APP_SOURCES "${TREK_APP_ICON}")
+    endif()
+  endif()
+  add_executable(egatrek MACOSX_BUNDLE ${TREK_APP_SOURCES})
   target_link_libraries(egatrek PRIVATE trek_core SDL3::SDL3)
   if(TARGET trek_game)
     target_link_libraries(egatrek PRIVATE trek_game)
@@ -56,7 +70,10 @@ if(TREK_BUILD_APP)
     OUTPUT_NAME "EGA Trek"
     MACOSX_BUNDLE_GUI_IDENTIFIER com.mabino.egatrek-port
     MACOSX_BUNDLE_BUNDLE_NAME "EGA Trek"
-    MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION})
+    MACOSX_BUNDLE_ICON_FILE "AppIcon.icns"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
+    MACOSX_BUNDLE_BUNDLE_VERSION "1"
+    MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/resources/Info.plist.in")
   if(EMSCRIPTEN)
     # The recompiled game (with its image) is compiled in; saves live in the browser.
     set_target_properties(egatrek PROPERTIES OUTPUT_NAME egatrek SUFFIX .html)
