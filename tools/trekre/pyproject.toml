@@ -4,13 +4,18 @@ version = "0.1.0"
 description = "Reverse-engineering tools for EGA Trek (1988, Nels Anderson)"
 requires-python = ">=3.12"
 license = "MIT"
-dependencies = []
+dependencies = [
+    "capstone>=5.0.9",
+]
 
 [project.scripts]
 trekre = "trekre.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = [
+    "pytest>=8",
+    "unicorn>=2.1.4",
+]
 
 [build-system]
 requires = ["hatchling"]

@@ -89,6 +89,67 @@ def _cmd_font(args) -> int:
     return 0
 
 
+def _cmd_dis(args) -> int:
+    from . import cfg, x86
+
+    prog = cfg.load(Executable.parse(_exe_path(args.data).read_bytes()))
+    seg, off = (int(x, 16) for x in args.address.split(":"))
+    at = seg * 16 + off
+    for _ in range(args.count):
+        try:
+            insn = x86.decode(prog.image, at, seg * 16)
+        except x86.DecodeError as e:
+            print(f"{seg:04x}:{at - seg * 16:04x}  {prog.image[at]:02x}             ?? {e}")
+            at += 1
+            continue
+        print(f"{seg:04x}:{at - seg * 16:04x}  {prog.image[at:at + insn.size].hex():14} {insn}")
+        at += insn.size
+    return 0
+
+
+def recompile(raw: bytes, out_dir: Path, extra_seeds: list[tuple[int, int]] = ()) -> dict:
+    """extra_seeds: (segment, offset) pairs relative to the load segment, as
+    trek_headless --dump-interpreted writes them."""
+    from . import cfg, codegen, hints
+
+    sha = hashlib.sha256(raw).hexdigest()
+    if not sha.startswith(hints.SHA256):
+        print(f"warning: TREK.EXE sha256 {sha[:16]}… differs from the version the hints were made for",
+              file=sys.stderr)
+    prog = cfg.load(Executable.parse(raw), moved=hints.MOVED)
+    L = prog.load_segment
+    absolute = lambda pairs: {(L + s, o) for s, o in pairs}  # noqa: E731
+    exclude = {(L + s) * 16 + o for s, o in hints.DYNAMIC}
+    found = {(L + sg, off) for sg, off in list(extra_seeds) + list(hints.FOUND_AT_RUN_TIME)}
+    seed_list = sorted(absolute(hints.seeds(prog.image)) | {s for s in found if (s[0] * 16 + s[1]) not in exclude})
+    cfg.discover(prog, seeds=seed_list, noreturn=absolute(hints.NORETURN))
+    prog.block_starts |= {lin for lin in exclude if lin in prog.insns}  # split blocks there
+    paths = codegen.generate(prog, out_dir, exclude=exclude, source_sha256=sha)
+    return {"instructions": len(prog.insns), "blocks": len(prog.block_starts - exclude),
+            "indirect_branches": len(prog.indirect), "decode_errors": len(prog.errors),
+            "files": [p.name for p in paths]}
+
+
+def _cmd_recomp(args) -> int:
+    extra = []
+    if args.extra_seeds:
+        extra = [tuple(int(x, 16) for x in line.split(":"))
+                 for line in Path(args.extra_seeds).read_text().split() if ":" in line]
+    stats = recompile(_exe_path(args.data).read_bytes(), Path(args.out), extra)
+    print(f"{stats['instructions']} instructions in {stats['blocks']} blocks -> {len(stats['files'])} files "
+          f"in {args.out} ({stats['decode_errors']} decode errors)")
+    return 0
+
+
+def _cmd_corpus(args) -> int:
+    from . import corpus
+
+    cases = corpus.generate(seed=args.seed)
+    corpus.write(cases, Path(args.out))
+    print(f"{len(cases)} cases -> {args.out}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="trekre")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -103,6 +164,20 @@ def main(argv: list[str] | None = None) -> int:
         if name == "strings":
             p.add_argument("--min", type=int, default=4, help="minimum string length")
         p.set_defaults(func=func)
+    d = sub.add_parser("dis", help="linear disassembly at SEG:OFF (segments as in the notes, unrelocated)")
+    d.add_argument("address")
+    d.add_argument("count", type=int, nargs="?", default=40)
+    d.add_argument("--data", help="folder holding TREK.EXE (default: $TREK_DATA)")
+    d.set_defaults(func=_cmd_dis)
+    rc = sub.add_parser("recomp", help="recompile TREK.EXE to C++ for the engine")
+    rc.add_argument("--data", help="folder holding TREK.EXE (default: $TREK_DATA)")
+    rc.add_argument("--out", default="build/generated")
+    rc.add_argument("--extra-seeds", help="file of SEG:OFF entry points found at run time")
+    rc.set_defaults(func=_cmd_recomp)
+    co = sub.add_parser("corpus", help="instruction test corpus from Unicorn (engine/tests/generated)")
+    co.add_argument("--out", default="../../engine/tests/generated")
+    co.add_argument("--seed", type=int, default=1988)
+    co.set_defaults(func=_cmd_corpus)
     args = parser.parse_args(argv)
     return args.func(args)
 

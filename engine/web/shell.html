@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EGA Trek</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #000; color: #aaa; font: 14px/1.4 ui-monospace, Menlo, monospace; }
+  main { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 8px; }
+  canvas { width: min(100vw, calc((100vh - 40px) * 4 / 3)); aspect-ratio: 4 / 3; image-rendering: pixelated; outline: none; }
+  p { margin: 0; }
+</style>
+</head>
+<body>
+<main>
+  <canvas id="canvas" tabindex="0" oncontextmenu="event.preventDefault()"></canvas>
+  <p id="status">Loading…</p>
+</main>
+<script>
+  const status = document.getElementById('status');
+  const canvas = document.getElementById('canvas');
+  var Module = {
+    canvas,
+    setStatus: (text) => { status.textContent = text || 'Click the screen to type. Shift-F1 is the boss key.'; },
+    print: (text) => console.log(text),
+    printErr: (text) => console.warn(text),
+  };
+  canvas.addEventListener('click', () => canvas.focus());
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>
