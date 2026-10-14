@@ -96,6 +96,12 @@ void Machine::reset() {
     delay_end_ms_ = 0.0;
     pit_read_hi_ = false;
 
+    title_screen_entered_ = true;
+    title_screen_passed_ = false;
+    briefing_auto_answered_ = false;
+    difficulty_auto_answered_ = false;
+    password_auto_answered_ = false;
+
     // Shorten title music initial rest from 4.4 seconds to ~200 ms so fanfare plays promptly.
     const std::uint32_t music = lin(program_.load_segment + 0x1F7B, 0x06A9);
     if (music + 3 < mem_.size() && mem_[music] == 36 && mem_[music + 1] == 0 &&
@@ -151,6 +157,28 @@ Machine::State Machine::run(std::int64_t slice, double now_ms) {
             if (handle_delay()) break;
             continue;
         }
+        const std::uint32_t welcome_pc = lin(program_.load_segment + 0x0be3, 0x44a1);
+        if (pc == welcome_pc) {
+            title_screen_entered_ = true;
+            title_screen_passed_ = true;
+        }
+        const std::uint32_t briefing_pc = lin(program_.load_segment + 0x0be3, 0x44eb);
+        if (pc == briefing_pc && startup_settings_.skip_briefing && !briefing_auto_answered_) {
+            briefing_auto_answered_ = true;
+            type_string("N\r");
+        }
+        const std::uint32_t skill_pc = lin(program_.load_segment + 0x0be3, 0x4579);
+        if (pc == skill_pc && startup_settings_.default_difficulty >= 1 &&
+            startup_settings_.default_difficulty <= 5 && !difficulty_auto_answered_) {
+            difficulty_auto_answered_ = true;
+            type_string(std::to_string(startup_settings_.default_difficulty) + "\r");
+        }
+        const std::uint32_t password_pc = lin(program_.load_segment + 0x0be3, 0x45b1);
+        if (pc == password_pc && !startup_settings_.default_password.empty() && !password_auto_answered_) {
+            password_auto_answered_ = true;
+            type_string(startup_settings_.default_password + "\r");
+        }
+
         const std::uint32_t restore_pc = lin(program_.load_segment + 0x0182, 0x6997);
         if (pc == restore_pc) {
             if (handle_restore()) continue;
@@ -434,6 +462,17 @@ bool Machine::has_unsaved_progress() const {
     if (state_ != State::Running) return false;
     if (mem_[lin(cpu.s[DS], 0x1526)] == 1) return false;
     return unsaved_progress_;
+}
+
+std::string Machine::current_command() const {
+    if (state_ != State::Running) return "";
+    const std::uint8_t len = mem_[lin(cpu.s[DS], 0x1065)];
+    std::string cmd;
+    cmd.reserve(len);
+    for (std::uint8_t i = 0; i < len; ++i) {
+        cmd.push_back(static_cast<char>(mem_[lin(cpu.s[DS], 0x1066 + i)]));
+    }
+    return cmd;
 }
 
 }  // namespace trek::dos

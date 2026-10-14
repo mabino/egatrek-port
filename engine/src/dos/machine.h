@@ -85,6 +85,20 @@ public:
     void set_active_save_path(std::optional<std::filesystem::path> path) { active_save_path_ = std::move(path); }
     const std::optional<std::filesystem::path>& active_save_path() const { return active_save_path_; }
 
+    struct StartupSettings {
+        bool skip_briefing = false;
+        int default_difficulty = 0;  // 0 = Ask Every Time, 1..5
+        std::string default_password;  // empty = unset
+    };
+
+    void set_startup_settings(StartupSettings settings) { startup_settings_ = std::move(settings); }
+    const StartupSettings& startup_settings() const { return startup_settings_; }
+
+    bool is_at_title_screen() const { return title_screen_entered_ && !title_screen_passed_; }
+    void mark_title_screen_entered() { title_screen_entered_ = true; title_screen_passed_ = false; }
+    void mark_title_screen_passed() { title_screen_entered_ = true; title_screen_passed_ = true; }
+    std::string current_command() const;
+
     bool is_at_command_prompt() const;
     void type_string(std::string_view s);
     void trigger_save();
@@ -274,6 +288,13 @@ private:
     RestoreHook restore_hook_;
     SaveHook save_hook_;
     bool unsaved_progress_ = false;
+
+    StartupSettings startup_settings_;
+    bool title_screen_entered_ = false;
+    bool title_screen_passed_ = false;
+    bool briefing_auto_answered_ = false;
+    bool difficulty_auto_answered_ = false;
+    bool password_auto_answered_ = false;
 
     std::uint8_t pit_mode_ = 0, pit_latch_lo_ = 0;
     bool pit_lo_written_ = false;

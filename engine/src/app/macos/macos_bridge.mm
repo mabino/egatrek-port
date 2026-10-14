@@ -12,11 +12,19 @@
 static NSString* const kPrefFullScreenByDefault = @"FullScreenByDefault";
 static NSString* const kPrefSoundMuted = @"SoundMuted";
 static NSString* const kPrefSoundVolume = @"SoundVolume";
+static NSString* const kPrefSkipBriefing = @"SkipBriefing";
+static NSString* const kPrefDefaultDifficulty = @"DefaultDifficulty";
+static NSString* const kPrefDefaultPassword = @"DefaultPassword";
+static NSString* const kPrefEnableMouseMovement = @"EnableMouseMovement";
 
-@interface TrekMacAppController : NSObject <NSWindowDelegate>
+@interface TrekMacAppController : NSObject <NSWindowDelegate, NSTextFieldDelegate>
 
 @property (nonatomic, strong, nullable) NSWindow* settingsWindow;
 @property (nonatomic, strong, nullable) NSButton* fullScreenCheckbox;
+@property (nonatomic, strong, nullable) NSButton* skipBriefingCheckbox;
+@property (nonatomic, strong, nullable) NSPopUpButton* difficultyPopup;
+@property (nonatomic, strong, nullable) NSTextField* passwordField;
+@property (nonatomic, strong, nullable) NSButton* mouseMovementCheckbox;
 @property (nonatomic, strong, nullable) NSButton* settingsMuteCheckbox;
 @property (nonatomic, strong, nullable) NSSlider* settingsVolumeSlider;
 @property (nonatomic, strong, nullable) NSTextField* settingsVolumeLabel;
@@ -45,6 +53,10 @@ static NSString* const kPrefSoundVolume = @"SoundVolume";
 - (void)saveGame:(nullable id)sender;
 - (void)saveGameAs:(nullable id)sender;
 - (void)promptSavePanelWithTitle:(NSString*)title message:(NSString*)message;
+
+- (void)enterSectorCoordinates:(nullable id)sender;
+- (void)enterQuadrantCoordinates:(nullable id)sender;
+
 - (BOOL)validateMenuItem:(NSMenuItem*)item;
 
 @end
@@ -60,6 +72,19 @@ static TrekMacAppController* s_controller = nil;
     
     const BOOL isFs = [[NSUserDefaults standardUserDefaults] boolForKey:kPrefFullScreenByDefault];
     self.fullScreenCheckbox.state = isFs ? NSControlStateValueOn : NSControlStateValueOff;
+
+    const BOOL skipVal = [[NSUserDefaults standardUserDefaults] boolForKey:kPrefSkipBriefing];
+    self.skipBriefingCheckbox.state = skipVal ? NSControlStateValueOn : NSControlStateValueOff;
+
+    const NSInteger savedDiff = [[NSUserDefaults standardUserDefaults] integerForKey:kPrefDefaultDifficulty];
+    [self.difficultyPopup selectItemWithTag:savedDiff];
+
+    NSString* savedPass = [[NSUserDefaults standardUserDefaults] stringForKey:kPrefDefaultPassword];
+    self.passwordField.stringValue = savedPass ? savedPass : @"";
+
+    id mmObj = [[NSUserDefaults standardUserDefaults] objectForKey:kPrefEnableMouseMovement];
+    const BOOL mmVal = (mmObj != nil) ? [mmObj boolValue] : YES;
+    self.mouseMovementCheckbox.state = mmVal ? NSControlStateValueOn : NSControlStateValueOff;
     
     float vol = 1.0f;
     bool muted = false;
@@ -72,7 +97,7 @@ static TrekMacAppController* s_controller = nil;
 }
 
 - (void)buildSettingsWindow {
-    const NSRect frame = NSMakeRect(0, 0, 440, 220);
+    const NSRect frame = NSMakeRect(0, 0, 460, 430);
     NSWindow* win = [[NSWindow alloc] initWithContentRect:frame
                                                 styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable)
                                                   backing:NSBackingStoreBuffered
@@ -88,13 +113,13 @@ static TrekMacAppController* s_controller = nil;
     // --- Startup & Display Section ---
     NSTextField* displayHeader = [NSTextField labelWithString:@"Startup & Display"];
     displayHeader.font = [NSFont boldSystemFontOfSize:13];
-    displayHeader.frame = NSMakeRect(20, 175, 400, 20);
+    displayHeader.frame = NSMakeRect(20, 390, 420, 20);
     [content addSubview:displayHeader];
 
     NSButton* fsCheck = [NSButton checkboxWithTitle:@"Open in Full Screen by default"
                                              target:self
                                              action:@selector(fullScreenCheckboxChanged:)];
-    fsCheck.frame = NSMakeRect(30, 145, 380, 24);
+    fsCheck.frame = NSMakeRect(30, 362, 400, 24);
     const BOOL fsVal = [[NSUserDefaults standardUserDefaults] boolForKey:kPrefFullScreenByDefault];
     fsCheck.state = fsVal ? NSControlStateValueOn : NSControlStateValueOff;
     [content addSubview:fsCheck];
@@ -103,18 +128,98 @@ static TrekMacAppController* s_controller = nil;
     NSTextField* fsHint = [NSTextField labelWithString:@"When enabled, EGA Trek opens directly into full screen upon launch."];
     fsHint.font = [NSFont systemFontOfSize:11];
     fsHint.textColor = [NSColor secondaryLabelColor];
-    fsHint.frame = NSMakeRect(48, 128, 370, 16);
+    fsHint.frame = NSMakeRect(48, 345, 390, 16);
     [content addSubview:fsHint];
 
-    // Separator line
-    NSBox* separator = [[NSBox alloc] initWithFrame:NSMakeRect(20, 118, 400, 1)];
-    separator.boxType = NSBoxSeparator;
-    [content addSubview:separator];
+    // Separator line 1
+    NSBox* separator1 = [[NSBox alloc] initWithFrame:NSMakeRect(20, 332, 420, 1)];
+    separator1.boxType = NSBoxSeparator;
+    [content addSubview:separator1];
+
+    // --- Gameplay & Controls Section ---
+    NSTextField* gameHeader = [NSTextField labelWithString:@"Gameplay & Controls"];
+    gameHeader.font = [NSFont boldSystemFontOfSize:13];
+    gameHeader.frame = NSMakeRect(20, 302, 420, 20);
+    [content addSubview:gameHeader];
+
+    NSButton* skipCheck = [NSButton checkboxWithTitle:@"Skip briefing prompt on new game"
+                                               target:self
+                                               action:@selector(skipBriefingCheckboxChanged:)];
+    skipCheck.frame = NSMakeRect(30, 274, 400, 24);
+    const BOOL skipVal = [[NSUserDefaults standardUserDefaults] boolForKey:kPrefSkipBriefing];
+    skipCheck.state = skipVal ? NSControlStateValueOn : NSControlStateValueOff;
+    [content addSubview:skipCheck];
+    self.skipBriefingCheckbox = skipCheck;
+
+    NSTextField* skipHint = [NSTextField labelWithString:@"Automatically answers 'No' to the briefing prompt for any new game."];
+    skipHint.font = [NSFont systemFontOfSize:11];
+    skipHint.textColor = [NSColor secondaryLabelColor];
+    skipHint.frame = NSMakeRect(48, 257, 390, 16);
+    [content addSubview:skipHint];
+
+    NSTextField* diffLabel = [NSTextField labelWithString:@"Default difficulty:"];
+    diffLabel.frame = NSMakeRect(30, 225, 150, 18);
+    [content addSubview:diffLabel];
+
+    NSPopUpButton* diffPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(180, 221, 180, 26) pullsDown:NO];
+    [diffPopup addItemWithTitle:@"Ask Every Time"];
+    diffPopup.lastItem.tag = 0;
+    [diffPopup addItemWithTitle:@"1 - Novice"];
+    diffPopup.lastItem.tag = 1;
+    [diffPopup addItemWithTitle:@"2 - Fair"];
+    diffPopup.lastItem.tag = 2;
+    [diffPopup addItemWithTitle:@"3 - Good"];
+    diffPopup.lastItem.tag = 3;
+    [diffPopup addItemWithTitle:@"4 - Expert"];
+    diffPopup.lastItem.tag = 4;
+    [diffPopup addItemWithTitle:@"5 - Emeritus"];
+    diffPopup.lastItem.tag = 5;
+    diffPopup.target = self;
+    diffPopup.action = @selector(difficultyPopupChanged:);
+    const NSInteger savedDiff = [[NSUserDefaults standardUserDefaults] integerForKey:kPrefDefaultDifficulty];
+    [diffPopup selectItemWithTag:savedDiff];
+    [content addSubview:diffPopup];
+    self.difficultyPopup = diffPopup;
+
+    NSTextField* passLabel = [NSTextField labelWithString:@"Default self-destruct password:"];
+    passLabel.frame = NSMakeRect(30, 192, 190, 18);
+    [content addSubview:passLabel];
+
+    NSTextField* passField = [[NSTextField alloc] initWithFrame:NSMakeRect(225, 190, 180, 22)];
+    passField.placeholderString = @"None (Ask Every Time)";
+    passField.delegate = self;
+    passField.target = self;
+    passField.action = @selector(passwordFieldChanged:);
+    NSString* savedPass = [[NSUserDefaults standardUserDefaults] stringForKey:kPrefDefaultPassword];
+    if (savedPass) passField.stringValue = savedPass;
+    [content addSubview:passField];
+    self.passwordField = passField;
+
+    NSButton* mouseCheck = [NSButton checkboxWithTitle:@"Enable mouse movement"
+                                                target:self
+                                                action:@selector(mouseMovementCheckboxChanged:)];
+    mouseCheck.frame = NSMakeRect(30, 152, 400, 24);
+    id mmObj = [[NSUserDefaults standardUserDefaults] objectForKey:kPrefEnableMouseMovement];
+    const BOOL mmVal = (mmObj != nil) ? [mmObj boolValue] : YES;
+    mouseCheck.state = mmVal ? NSControlStateValueOn : NSControlStateValueOff;
+    [content addSubview:mouseCheck];
+    self.mouseMovementCheckbox = mouseCheck;
+
+    NSTextField* mouseHint = [NSTextField labelWithString:@"Clicking sector or quadrant maps auto-fills movement coordinates."];
+    mouseHint.font = [NSFont systemFontOfSize:11];
+    mouseHint.textColor = [NSColor secondaryLabelColor];
+    mouseHint.frame = NSMakeRect(48, 135, 390, 16);
+    [content addSubview:mouseHint];
+
+    // Separator line 2
+    NSBox* separator2 = [[NSBox alloc] initWithFrame:NSMakeRect(20, 122, 420, 1)];
+    separator2.boxType = NSBoxSeparator;
+    [content addSubview:separator2];
 
     // --- Audio Section ---
     NSTextField* audioHeader = [NSTextField labelWithString:@"Game Audio"];
     audioHeader.font = [NSFont boldSystemFontOfSize:13];
-    audioHeader.frame = NSMakeRect(20, 90, 400, 20);
+    audioHeader.frame = NSMakeRect(20, 92, 420, 20);
     [content addSubview:audioHeader];
 
     NSButton* muteCheck = [NSButton checkboxWithTitle:@"Mute sound"
@@ -144,6 +249,36 @@ static TrekMacAppController* s_controller = nil;
     self.settingsVolumeLabel = volVal;
 
     self.settingsWindow = win;
+}
+
+- (void)skipBriefingCheckboxChanged:(NSButton*)sender {
+    const BOOL skip = (sender.state == NSControlStateValueOn);
+    [[NSUserDefaults standardUserDefaults] setBool:skip forKey:kPrefSkipBriefing];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
+- (void)difficultyPopupChanged:(NSPopUpButton*)sender {
+    const NSInteger tag = sender.selectedItem.tag;
+    [[NSUserDefaults standardUserDefaults] setInteger:tag forKey:kPrefDefaultDifficulty];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
+- (void)passwordFieldChanged:(NSTextField*)sender {
+    NSString* val = sender.stringValue ? sender.stringValue : @"";
+    [[NSUserDefaults standardUserDefaults] setObject:val forKey:kPrefDefaultPassword];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
+- (void)controlTextDidChange:(NSNotification*)note {
+    if (note.object == self.passwordField) {
+        [self passwordFieldChanged:self.passwordField];
+    }
+}
+
+- (void)mouseMovementCheckboxChanged:(NSButton*)sender {
+    const BOOL mm = (sender.state == NSControlStateValueOn);
+    [[NSUserDefaults standardUserDefaults] setBool:mm forKey:kPrefEnableMouseMovement];
+    [[NSUserDefaults standardUserDefaults] synchronize];
 }
 
 - (void)fullScreenCheckboxChanged:(NSButton*)sender {
@@ -469,10 +604,68 @@ static TrekMacAppController* s_controller = nil;
     [self promptSavePanelWithTitle:@"Save Game As" message:@"Choose a name and location to save a copy of your game:"];
 }
 
+- (void)enterSectorCoordinates:(nullable id)sender {
+    (void)sender;
+    if (self.callbacks.can_control && !self.callbacks.can_control(self.callbacks.context)) {
+        NSBeep();
+        return;
+    }
+    NSAlert* alert = [[NSAlert alloc] init];
+    alert.messageText = @"Set Sector Coordinates";
+    alert.informativeText = @"Enter sector coordinates as row, column (1-8, e.g. 3,5):";
+    alert.alertStyle = NSAlertStyleInformational;
+    [alert addButtonWithTitle:@"Set"];
+    [alert addButtonWithTitle:@"Cancel"];
+
+    NSTextField* input = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 200, 24)];
+    input.placeholderString = @"3,5";
+    alert.accessoryView = input;
+    [alert.window setInitialFirstResponder:input];
+
+    if ([alert runModal] == NSAlertFirstButtonReturn) {
+        NSString* text = [input.stringValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if (text.length > 0 && self.callbacks.enter_coordinates) {
+            self.callbacks.enter_coordinates(self.callbacks.context, [text UTF8String]);
+        }
+    }
+}
+
+- (void)enterQuadrantCoordinates:(nullable id)sender {
+    (void)sender;
+    if (self.callbacks.can_control && !self.callbacks.can_control(self.callbacks.context)) {
+        NSBeep();
+        return;
+    }
+    NSAlert* alert = [[NSAlert alloc] init];
+    alert.messageText = @"Set Quadrant Coordinates";
+    alert.informativeText = @"Enter quadrant coordinates as row, column (1-8, e.g. 6,2):";
+    alert.alertStyle = NSAlertStyleInformational;
+    [alert addButtonWithTitle:@"Set"];
+    [alert addButtonWithTitle:@"Cancel"];
+
+    NSTextField* input = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 200, 24)];
+    input.placeholderString = @"6,2";
+    alert.accessoryView = input;
+    [alert.window setInitialFirstResponder:input];
+
+    if ([alert runModal] == NSAlertFirstButtonReturn) {
+        NSString* text = [input.stringValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if (text.length > 0 && self.callbacks.enter_coordinates) {
+            self.callbacks.enter_coordinates(self.callbacks.context, [text UTF8String]);
+        }
+    }
+}
+
 - (BOOL)validateMenuItem:(NSMenuItem*)item {
     if (item.action == @selector(saveGame:) || item.action == @selector(saveGameAs:)) {
         if (self.callbacks.can_save) {
             return self.callbacks.can_save(self.callbacks.context) ? YES : NO;
+        }
+        return NO;
+    }
+    if (item.action == @selector(enterSectorCoordinates:) || item.action == @selector(enterQuadrantCoordinates:)) {
+        if (self.callbacks.can_control) {
+            return self.callbacks.can_control(self.callbacks.context) ? YES : NO;
         }
         return NO;
     }
@@ -512,13 +705,56 @@ void save_sound_preferences(float volume, bool muted) {
     [[NSUserDefaults standardUserDefaults] synchronize];
 }
 
+bool should_skip_briefing() {
+    return [[NSUserDefaults standardUserDefaults] boolForKey:kPrefSkipBriefing];
+}
+
+void set_skip_briefing(bool skip) {
+    [[NSUserDefaults standardUserDefaults] setBool:skip forKey:kPrefSkipBriefing];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
+int get_default_difficulty() {
+    return static_cast<int>([[NSUserDefaults standardUserDefaults] integerForKey:kPrefDefaultDifficulty]);
+}
+
+void set_default_difficulty(int difficulty) {
+    [[NSUserDefaults standardUserDefaults] setInteger:difficulty forKey:kPrefDefaultDifficulty];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
+std::string get_default_password() {
+    NSString* val = [[NSUserDefaults standardUserDefaults] stringForKey:kPrefDefaultPassword];
+    return val ? [val UTF8String] : "";
+}
+
+void set_default_password(const std::string& password) {
+    NSString* val = [NSString stringWithUTF8String:password.c_str()];
+    [[NSUserDefaults standardUserDefaults] setObject:val forKey:kPrefDefaultPassword];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
+bool is_mouse_movement_enabled() {
+    id obj = [[NSUserDefaults standardUserDefaults] objectForKey:kPrefEnableMouseMovement];
+    return (obj != nil) ? [obj boolValue] : true;
+}
+
+void set_mouse_movement_enabled(bool enabled) {
+    [[NSUserDefaults standardUserDefaults] setBool:enabled forKey:kPrefEnableMouseMovement];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
 void setup_macos_app(SDL_Window* window, const SoundBridgeCallbacks& callbacks) {
     (void)window;
     @autoreleasepool {
         NSDictionary* defaults = @{
             kPrefFullScreenByDefault: @NO,
             kPrefSoundMuted: @NO,
-            kPrefSoundVolume: @1.0f
+            kPrefSoundVolume: @1.0f,
+            kPrefSkipBriefing: @NO,
+            kPrefDefaultDifficulty: @0,
+            kPrefDefaultPassword: @"",
+            kPrefEnableMouseMovement: @YES
         };
         [[NSUserDefaults standardUserDefaults] registerDefaults:defaults];
 
@@ -590,7 +826,37 @@ void setup_macos_app(SDL_Window* window, const SoundBridgeCallbacks& callbacks) 
             }
         }
 
-        // 3. Add Sound Menu (between App/File menu and Window menu)
+        // 3. Add Controls Menu (between File and Sound)
+        NSInteger controlsIdx = [mainMenu indexOfItemWithTitle:@"Controls"];
+        if (controlsIdx < 0) {
+            NSMenu* controlsMenu = [[NSMenu alloc] initWithTitle:@"Controls"];
+
+            NSMenuItem* sectorItem = [[NSMenuItem alloc] initWithTitle:@"Set Sector Coordinates…"
+                                                                action:@selector(enterSectorCoordinates:)
+                                                         keyEquivalent:@"k"];
+            sectorItem.keyEquivalentModifierMask = NSEventModifierFlagCommand;
+            sectorItem.target = s_controller;
+            [controlsMenu addItem:sectorItem];
+
+            NSMenuItem* quadItem = [[NSMenuItem alloc] initWithTitle:@"Set Quadrant Coordinates…"
+                                                              action:@selector(enterQuadrantCoordinates:)
+                                                       keyEquivalent:@"j"];
+            quadItem.keyEquivalentModifierMask = NSEventModifierFlagCommand;
+            quadItem.target = s_controller;
+            [controlsMenu addItem:quadItem];
+
+            NSMenuItem* controlsTopItem = [[NSMenuItem alloc] initWithTitle:@"Controls" action:nil keyEquivalent:@""];
+            controlsTopItem.submenu = controlsMenu;
+
+            NSInteger filePos = [mainMenu indexOfItemWithTitle:@"File"];
+            if (filePos >= 0 && filePos + 1 <= mainMenu.numberOfItems) {
+                [mainMenu insertItem:controlsTopItem atIndex:filePos + 1];
+            } else {
+                [mainMenu addItem:controlsTopItem];
+            }
+        }
+
+        // 4. Add Sound Menu (between Controls menu and Window menu)
         NSInteger soundIdx = [mainMenu indexOfItemWithTitle:@"Sound"];
         if (soundIdx < 0) {
             NSMenu* soundMenu = [[NSMenu alloc] initWithTitle:@"Sound"];

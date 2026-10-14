@@ -13,6 +13,7 @@ add_library(trek_core
   src/dos/machine.cpp
   src/dos/rom_font.cpp
   src/dos/speaker.cpp
+  src/app/mouse_control.cpp
 )
 target_include_directories(trek_core PUBLIC src)
 target_link_libraries(trek_core PUBLIC trek_flags)
@@ -106,6 +107,7 @@ if(TREK_BUILD_TESTS)
     tests/sound_state_test.cpp
     tests/window_geometry_test.cpp
     tests/save_file_test.cpp
+    tests/mouse_control_test.cpp
   )
   target_link_libraries(trek_tests PRIVATE trek_core doctest::doctest)
   add_test(NAME unit COMMAND trek_tests)

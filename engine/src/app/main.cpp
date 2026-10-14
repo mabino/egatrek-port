@@ -18,6 +18,7 @@
 
 #include "app/host_keys.h"
 #include "app/macos/macos_bridge.h"
+#include "app/mouse_control.h"
 #include "app/sound_state.h"
 #include "app/window_geometry.h"
 #include "core/data_path.h"
@@ -128,6 +129,14 @@ void setup_machine_hooks(App& app) {
     if (!app.active_save_path.empty()) {
         app.machine->set_active_save_path(app.active_save_path);
     }
+
+    trek::dos::Machine::StartupSettings settings;
+#if defined(__APPLE__) && !defined(__EMSCRIPTEN__)
+    settings.skip_briefing = trek::macos::should_skip_briefing();
+    settings.default_difficulty = trek::macos::get_default_difficulty();
+    settings.default_password = trek::macos::get_default_password();
+#endif
+    app.machine->set_startup_settings(settings);
 
 #if defined(__APPLE__) && !defined(__EMSCRIPTEN__)
     app.machine->set_restore_hook([&app](trek::dos::Machine& m) -> bool {
@@ -392,6 +401,20 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
             auto* a = static_cast<App*>(ctx);
             return a->default_save_dir.empty() ? nullptr : a->default_save_dir.c_str();
         };
+        callbacks.can_control = [](void* ctx) -> bool {
+            auto* a = static_cast<App*>(ctx);
+            return a->machine && a->machine->is_at_command_prompt();
+        };
+        callbacks.enter_coordinates = [](void* ctx, const char* coords) {
+            auto* a = static_cast<App*>(ctx);
+            if (!a->machine || !a->machine->is_at_command_prompt() || !coords) return;
+            auto parsed = trek::mouse::parse_coordinate_input(coords);
+            if (!parsed) return;
+            std::string cmd = trek::mouse::format_coordinate_command(a->machine->current_command(), *parsed);
+            if (!cmd.empty()) {
+                a->machine->type_string(cmd);
+            }
+        };
         trek::macos::setup_macos_app(app->window, callbacks);
 #endif
     }
@@ -410,6 +433,50 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         }
         return SDL_APP_SUCCESS;
     }
+    if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN && event->button.button == SDL_BUTTON_LEFT) {
+        if (!app->machine) return SDL_APP_CONTINUE;
+
+        // Advance past title screen on mouse click
+        if (app->machine->is_at_title_screen()) {
+            app->machine->key_down(0x39, ' ');
+            return SDL_APP_CONTINUE;
+        }
+
+        // Handle in-game clicks at command prompt
+        if (app->machine->is_at_command_prompt()) {
+            float lx = 0.0f, ly = 0.0f;
+            SDL_RenderCoordinatesFromWindow(app->renderer, event->button.x, event->button.y, &lx, &ly);
+            if (lx >= 0.0f && lx < 640.0f && ly >= 0.0f && ly < 480.0f) {
+                const float ega_x = lx;
+                const float ega_y = ly * (350.0f / 480.0f);
+
+                // 1. Acknowledge message box
+                if (auto box = trek::mouse::map_message_box(ega_x, ega_y)) {
+                    app->machine->type_string("\033A" + std::to_string(*box) + "\r");
+                    return SDL_APP_CONTINUE;
+                }
+
+                // 2. Map movement auto-fill
+                bool mouse_move_enabled = true;
+#if defined(__APPLE__) && !defined(__EMSCRIPTEN__)
+                mouse_move_enabled = trek::macos::is_mouse_movement_enabled();
+#endif
+                if (mouse_move_enabled) {
+                    if (auto sect = trek::mouse::map_sector_coordinates(ega_x, ega_y)) {
+                        std::string cmd = trek::mouse::format_move_command(app->machine->current_command(), false, sect->first, sect->second);
+                        app->machine->type_string(cmd);
+                        return SDL_APP_CONTINUE;
+                    }
+                    if (auto quad = trek::mouse::map_quadrant_coordinates(ega_x, ega_y)) {
+                        std::string cmd = trek::mouse::format_move_command(app->machine->current_command(), true, quad->first, quad->second);
+                        app->machine->type_string(cmd);
+                        return SDL_APP_CONTINUE;
+                    }
+                }
+            }
+        }
+        return SDL_APP_CONTINUE;
+    }
     if (event->type == SDL_EVENT_KEY_DOWN || event->type == SDL_EVENT_KEY_UP) {
         if (app->machine) app->machine->set_shift_state(trek::host_shift_flags(event->key.mod));
         if (event->type == SDL_EVENT_KEY_DOWN) {
@@ -419,6 +486,13 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
                     return SDL_APP_CONTINUE;
                 }
                 return SDL_APP_SUCCESS;
+            }
+            if ((event->key.mod & SDL_KMOD_GUI) && event->key.key == SDLK_N) {
+                if (!confirm_unsaved_changes(*app, "Do you want to save the changes to the current game before starting a new one?")) {
+                    return SDL_APP_CONTINUE;
+                }
+                restart_game_new(*app);
+                return SDL_APP_CONTINUE;
             }
             if (!app->machine) return event->key.key == SDLK_ESCAPE ? SDL_APP_SUCCESS : SDL_APP_CONTINUE;
             // Ignore host Command-key shortcuts so menu shortcuts don't type into the game.
