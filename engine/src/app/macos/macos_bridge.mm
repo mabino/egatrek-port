@@ -44,6 +44,7 @@ static NSString* const kPrefSoundVolume = @"SoundVolume";
 - (void)openGame:(nullable id)sender;
 - (void)saveGame:(nullable id)sender;
 - (void)saveGameAs:(nullable id)sender;
+- (void)promptSavePanelWithTitle:(NSString*)title message:(NSString*)message;
 - (BOOL)validateMenuItem:(NSMenuItem*)item;
 
 @end
@@ -407,30 +408,16 @@ static TrekMacAppController* s_controller = nil;
     }
 }
 
-- (void)saveGame:(nullable id)sender {
-    (void)sender;
-    if (self.callbacks.can_save && !self.callbacks.can_save(self.callbacks.context)) {
-        NSBeep();
-        return;
-    }
-    if (self.callbacks.has_active_save && self.callbacks.has_active_save(self.callbacks.context)) {
-        if (self.callbacks.save_game) {
-            self.callbacks.save_game(self.callbacks.context);
-        }
-    } else {
-        [self saveGameAs:sender];
-    }
-}
-
-- (void)saveGameAs:(nullable id)sender {
-    (void)sender;
+- (void)promptSavePanelWithTitle:(NSString*)title message:(NSString*)message {
     if (self.callbacks.can_save && !self.callbacks.can_save(self.callbacks.context)) {
         NSBeep();
         return;
     }
     NSSavePanel* panel = [NSSavePanel savePanel];
-    panel.title = @"Save Game As";
+    panel.title = title;
+    panel.message = message;
     panel.allowedFileTypes = @[ @"sav", @"SAV" ];
+    panel.canCreateDirectories = YES;
 
     NSString* defaultName = @"TREK.SAV";
     if (self.callbacks.get_active_save_path) {
@@ -455,6 +442,26 @@ static TrekMacAppController* s_controller = nil;
             self.callbacks.save_game_as(self.callbacks.context, [path UTF8String]);
         }
     }
+}
+
+- (void)saveGame:(nullable id)sender {
+    (void)sender;
+    if (self.callbacks.can_save && !self.callbacks.can_save(self.callbacks.context)) {
+        NSBeep();
+        return;
+    }
+    if (self.callbacks.has_active_save && self.callbacks.has_active_save(self.callbacks.context)) {
+        if (self.callbacks.save_game) {
+            self.callbacks.save_game(self.callbacks.context);
+        }
+    } else {
+        [self promptSavePanelWithTitle:@"Save Game" message:@"Choose a name and location to save your game:"];
+    }
+}
+
+- (void)saveGameAs:(nullable id)sender {
+    (void)sender;
+    [self promptSavePanelWithTitle:@"Save Game As" message:@"Choose a name and location to save a copy of your game:"];
 }
 
 - (BOOL)validateMenuItem:(NSMenuItem*)item {
