@@ -142,8 +142,8 @@ Open `http://localhost:8080/egatrek.html` in any modern web browser.
 | **Arrow Keys / Keypad** | Navigate ship and menus |
 | **Space / Enter** | Advance text, accept command |
 | **Shift-F1** | **Boss Key**: Instantly flips to a fake DOS prompt screen (`dir/w`) |
-| **`SAVE`** | Save current game state to `TREK.SAV` (persisted in macOS Application Support or browser IndexedDB) |
-| **`RESTORE`** | Restore saved game |
+| **`SAVE`** / **Cmd-S** | Save current game state (defaults to `.egatrek` save files in Application Support or user-chosen location) |
+| **`RESTORE`** / **Cmd-O** | Restore saved game |
 | **`Q` / Cmd-Q** | Quit game |
 
 ---

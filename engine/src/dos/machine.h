@@ -84,6 +84,7 @@ public:
 
     void set_active_save_path(std::optional<std::filesystem::path> path) { active_save_path_ = std::move(path); }
     const std::optional<std::filesystem::path>& active_save_path() const { return active_save_path_; }
+    std::optional<std::filesystem::path> host_path(const std::string& dos_name, bool for_write) const;
 
     struct StartupSettings {
         bool skip_briefing = false;
@@ -262,7 +263,6 @@ private:
     bool int21();
     bool int1a();
     void int21_files(std::uint8_t ah);
-    std::optional<std::filesystem::path> host_path(const std::string& dos_name, bool for_write) const;
     std::string read_asciiz(std::uint16_t seg, std::uint16_t off) const;
 
     const Program& program_;

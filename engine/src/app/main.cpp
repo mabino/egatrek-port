@@ -226,7 +226,7 @@ bool confirm_unsaved_changes(App& app, const char* action_message) {
     } else {
         char chosen[1024] = {0};
         const char* def_dir = app.default_save_dir.empty() ? nullptr : app.default_save_dir.c_str();
-        if (trek::macos::prompt_save_as_panel(chosen, sizeof(chosen), def_dir, "TREK.SAV")) {
+        if (trek::macos::prompt_save_as_panel(chosen, sizeof(chosen), def_dir, "TREK.egatrek")) {
             return save_game_synchronously(app, chosen);
         }
         return false;
@@ -384,7 +384,7 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
             auto* a = static_cast<App*>(ctx);
             if (a->machine && a->machine->is_at_command_prompt()) {
                 if (a->active_save_path.empty()) {
-                    a->active_save_path = (save_folder() / "TREK.SAV").string();
+                    a->active_save_path = (save_folder() / "TREK.egatrek").string();
                     a->machine->set_active_save_path(a->active_save_path);
                 }
                 a->machine->trigger_save();

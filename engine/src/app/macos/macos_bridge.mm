@@ -519,7 +519,8 @@ static TrekMacAppController* s_controller = nil;
     panel.canChooseFiles = YES;
     panel.canChooseDirectories = NO;
     panel.allowsMultipleSelection = NO;
-    panel.allowedFileTypes = @[ @"sav", @"SAV" ];
+    panel.allowedFileTypes = @[ @"egatrek", @"sav", @"SAV" ];
+    panel.allowsOtherFileTypes = YES;
 
     if (self.callbacks.get_default_save_dir) {
         const char* dir = self.callbacks.get_default_save_dir(self.callbacks.context);
@@ -556,10 +557,11 @@ static TrekMacAppController* s_controller = nil;
     NSSavePanel* panel = [NSSavePanel savePanel];
     panel.title = title;
     panel.message = message;
-    panel.allowedFileTypes = @[ @"sav", @"SAV" ];
+    panel.allowedFileTypes = @[ @"egatrek", @"sav" ];
+    panel.allowsOtherFileTypes = YES;
     panel.canCreateDirectories = YES;
 
-    NSString* defaultName = @"TREK.SAV";
+    NSString* defaultName = @"TREK.egatrek";
     if (self.callbacks.get_active_save_path) {
         const char* cur = self.callbacks.get_active_save_path(self.callbacks.context);
         if (cur && cur[0]) {
@@ -996,7 +998,8 @@ bool prompt_restore_panel(char* out_path, std::size_t max_len, const char* defau
         panel.canChooseFiles = YES;
         panel.canChooseDirectories = NO;
         panel.allowsMultipleSelection = NO;
-        panel.allowedFileTypes = @[ @"sav", @"SAV" ];
+        panel.allowedFileTypes = @[ @"egatrek", @"sav", @"SAV" ];
+        panel.allowsOtherFileTypes = YES;
         if (default_dir && default_dir[0]) {
             panel.directoryURL = [NSURL fileURLWithPath:[NSString stringWithUTF8String:default_dir]];
         }
@@ -1029,7 +1032,8 @@ bool prompt_save_as_panel(char* out_path, std::size_t max_len, const char* defau
         NSSavePanel* panel = [NSSavePanel savePanel];
         panel.title = @"Save Game";
         panel.message = @"Choose a name and location to save your game:";
-        panel.allowedFileTypes = @[ @"sav", @"SAV" ];
+        panel.allowedFileTypes = @[ @"egatrek", @"sav" ];
+        panel.allowsOtherFileTypes = YES;
         panel.canCreateDirectories = YES;
 
         if (default_dir && default_dir[0]) {
@@ -1038,7 +1042,7 @@ bool prompt_save_as_panel(char* out_path, std::size_t max_len, const char* defau
         if (default_name && default_name[0]) {
             panel.nameFieldStringValue = [NSString stringWithUTF8String:default_name];
         } else {
-            panel.nameFieldStringValue = @"TREK.SAV";
+            panel.nameFieldStringValue = @"TREK.egatrek";
         }
 
         if ([panel runModal] == NSModalResponseOK) {

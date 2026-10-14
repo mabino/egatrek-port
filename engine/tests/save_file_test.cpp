@@ -180,5 +180,79 @@ TEST_CASE("accepts valid save file with CRLF line endings") {
     fs::remove(crlf_temp);
 }
 
+TEST_CASE("accepts valid save file with .egatrek extension and arbitrary names") {
+    const fs::path egatrek_temp = fs::temp_directory_path() / "Enterprise_Mission_Alpha.egatrek";
+    const fs::path arbitrary_temp = fs::temp_directory_path() / "MyCustomGameSave_2026.dat";
+    const auto write_valid_save = [](const fs::path& p) {
+        std::ofstream out(p);
+        out << "2\n";
+        for (int i = 1; i < 222; ++i) {
+            if (i == 24) out << "EXCELSIOR\n";
+            else out << "50\n";
+        }
+        out << "TRUE\n";
+        out << "TRUE\n";
+        out << "FALSE\n";
+        out << "FALSE\n";
+        out << "TRUE\n";
+    };
+
+    write_valid_save(egatrek_temp);
+    write_valid_save(arbitrary_temp);
+
+    CHECK(trek::validate_save_file(egatrek_temp));
+    CHECK(trek::validate_save_file(arbitrary_temp));
+
+    fs::remove(egatrek_temp);
+    fs::remove(arbitrary_temp);
+}
+
+TEST_CASE("Machine host_path abstracts TREK.SAV to .egatrek and arbitrary active_save_path") {
+    fs::path temp_dir = fs::temp_directory_path() / "trek_test_abstract_save";
+    fs::create_directories(temp_dir);
+
+    std::vector<std::uint8_t> image(0x4000, 0);
+    trek::dos::Program prog{image, 0x1000, 0x1000, 0, 0x1000, 0x200, 0, {}, {}, {}, {}};
+    trek::dos::Machine m(prog, {{}, temp_dir});
+
+    // Default for_write should resolve to TREK.egatrek
+    auto write_default = m.host_path("TREK.SAV", true);
+    REQUIRE(write_default.has_value());
+    CHECK_EQ(write_default->filename(), "TREK.egatrek");
+
+    // Default for_read when no file exists should be nullopt
+    auto read_none = m.host_path("TREK.SAV", false);
+    CHECK_FALSE(read_none.has_value());
+
+    // When TREK.egatrek exists on disk, for_read should find it
+    {
+        std::ofstream out(*write_default);
+        out << "dummy\n";
+    }
+    auto read_hit = m.host_path("TREK.SAV", false);
+    REQUIRE(read_hit.has_value());
+    CHECK_EQ(*read_hit, *write_default);
+
+    // When active_save_path is set to an arbitrary name, host_path resolves to it
+    fs::path custom = temp_dir / "Captain_Log_Stardate_4125.custom";
+    m.set_active_save_path(custom);
+
+    auto custom_write = m.host_path("TREK.SAV", true);
+    REQUIRE(custom_write.has_value());
+    CHECK_EQ(*custom_write, custom);
+
+    // for_read requires the file to exist
+    CHECK_FALSE(m.host_path("TREK.SAV", false).has_value());
+    {
+        std::ofstream out(custom);
+        out << "custom data\n";
+    }
+    auto custom_read = m.host_path("TREK.SAV", false);
+    REQUIRE(custom_read.has_value());
+    CHECK_EQ(*custom_read, custom);
+
+    fs::remove_all(temp_dir);
+}
+
 }
 
