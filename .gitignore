@@ -3,6 +3,8 @@ build/
 build-*/
 dist/
 *.app
+*.dmg
+*.iconset/
 
 # Analysis output (derived from the original game; never commit)
 out/

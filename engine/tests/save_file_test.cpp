@@ -161,4 +161,24 @@ TEST_CASE("Machine unsaved progress tracking") {
     fs::remove_all(temp_dir);
 }
 
+TEST_CASE("accepts valid save file with CRLF line endings") {
+    const fs::path crlf_temp = fs::temp_directory_path() / "trek_crlf_temp.sav";
+    {
+        std::ofstream out(crlf_temp, std::ios::binary);
+        out << "1\r\n"; // skill 1
+        for (int i = 1; i < 222; ++i) {
+            if (i == 24) out << "POTEMKIN\r\n";
+            else out << "99\r\n";
+        }
+        out << "FALSE\r\n";
+        out << "FALSE\r\n";
+        out << "TRUE\r\n";
+        out << "TRUE\r\n";
+        out << "FALSE\r\n";
+    }
+    CHECK(trek::validate_save_file(crlf_temp));
+    fs::remove(crlf_temp);
 }
+
+}
+

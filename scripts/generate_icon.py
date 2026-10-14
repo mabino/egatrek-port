@@ -52,8 +52,8 @@ def make_icon():
 
     # USS Enterprise NCC-1701 vector illustration
     # Saucer center slightly above middle
-    sc_y = cy - 180
-    sc_r = 340  # Saucer radius
+    sc_y = cy - 250
+    sc_r = 330  # Saucer radius
 
     # Saucer glow
     saucer_glow = Image.new("RGBA", (S, S), (0, 0, 0, 0))
@@ -74,20 +74,20 @@ def make_icon():
     draw.ellipse([cx - 16, sc_y - 16, cx + 16, sc_y + 16], fill=(255, 220, 0, 255))
 
     # Secondary Hull (Engineering Hull)
-    eh_w, eh_h = 100, 480
-    eh_top = sc_y + 180
+    eh_w, eh_h = 95, 420
+    eh_top = sc_y + 175
     draw.rounded_rectangle([cx - eh_w, eh_top, cx + eh_w, eh_top + eh_h], radius=40, fill=(190, 212, 230, 255), outline=(0, 200, 240, 255), width=8)
 
     # Deflector Dish (Amber / Gold glow)
-    deflector_y = eh_top + eh_h - 40
-    draw.ellipse([cx - 48, deflector_y - 20, cx + 48, deflector_y + 20], fill=(255, 170, 0, 255), outline=(255, 240, 100, 255), width=6)
+    deflector_y = eh_top + eh_h - 35
+    draw.ellipse([cx - 48, deflector_y - 18, cx + 48, deflector_y + 18], fill=(255, 170, 0, 255), outline=(255, 240, 100, 255), width=6)
 
     # Warp Pylons (struts extending outward to nacelles)
-    pylon_y_start = eh_top + 160
-    nacelle_spacing = 380
-    nacelle_y_top = eh_top - 60
-    nacelle_w = 70
-    nacelle_h = 560
+    pylon_y_start = eh_top + 140
+    nacelle_spacing = 370
+    nacelle_y_top = eh_top - 50
+    nacelle_w = 68
+    nacelle_h = 490
 
     # Left pylon
     draw.polygon([(cx - 70, pylon_y_start + 60), (cx - nacelle_spacing + 20, pylon_y_start - 30),
@@ -111,7 +111,7 @@ def make_icon():
                        fill=(0, 230, 255, 255))
 
     # Starfleet Delta Emblem subtle watermark / crest at bottom center
-    badge_y = S - 320
+    badge_y = S - 370
     badge = Image.new("RGBA", (S, S), (0, 0, 0, 0))
     b_draw = ImageDraw.Draw(badge)
     delta_pts = [
@@ -128,7 +128,7 @@ def make_icon():
     # Title label banner: "EGA TREK"
     # Draw retro futuristic text or lettering
     # High-contrast label bar near bottom
-    bar_y = S - 200
+    bar_y = S - 260
     draw.rounded_rectangle([cx - 280, bar_y - 45, cx + 280, bar_y + 45], radius=20, fill=(0, 20, 45, 220), outline=(0, 220, 255, 255), width=6)
 
     # Vector letter strokes for "EGA TREK"
@@ -176,41 +176,45 @@ def make_icon():
     icon_1024 = final_2k.resize((1024, 1024), Image.Resampling.LANCZOS)
     return icon_1024
 
+import tempfile
+
 def main():
     root = Path(__file__).resolve().parent.parent
     res_dir = root / "engine" / "resources"
     res_dir.mkdir(parents=True, exist_ok=True)
-    iconset_dir = res_dir / "AppIcon.iconset"
-    iconset_dir.mkdir(exist_ok=True)
 
     master = make_icon()
-
-    # Generate all standard macOS icon sizes
-    sizes = [
-        (16, 1, "icon_16x16.png"),
-        (16, 2, "icon_16x16@2x.png"),
-        (32, 1, "icon_32x32.png"),
-        (32, 2, "icon_32x32@2x.png"),
-        (128, 1, "icon_128x128.png"),
-        (128, 2, "icon_128x128@2x.png"),
-        (256, 1, "icon_256x256.png"),
-        (256, 2, "icon_256x256@2x.png"),
-        (512, 1, "icon_512x512.png"),
-        (512, 2, "icon_512x512@2x.png"),
-    ]
-
-    for base_sz, scale, filename in sizes:
-        dim = base_sz * scale
-        resized = master.resize((dim, dim), Image.Resampling.LANCZOS)
-        resized.save(iconset_dir / filename, "PNG")
 
     # Master 1024 PNG
     master.save(res_dir / "AppIcon-1024.png", "PNG")
 
-    # Generate .icns via iconutil
-    icns_path = res_dir / "AppIcon.icns"
-    subprocess.run(["iconutil", "-c", "icns", str(iconset_dir), "-o", str(icns_path)], check=True)
-    print(f"Generated {icns_path} ({icns_path.stat().st_size} bytes)")
+    # Generate all standard macOS icon sizes in a temporary iconset
+    with tempfile.TemporaryDirectory() as tmpdir:
+        iconset_dir = Path(tmpdir) / "AppIcon.iconset"
+        iconset_dir.mkdir()
+
+        sizes = [
+            (16, 1, "icon_16x16.png"),
+            (16, 2, "icon_16x16@2x.png"),
+            (32, 1, "icon_32x32.png"),
+            (32, 2, "icon_32x32@2x.png"),
+            (128, 1, "icon_128x128.png"),
+            (128, 2, "icon_128x128@2x.png"),
+            (256, 1, "icon_256x256.png"),
+            (256, 2, "icon_256x256@2x.png"),
+            (512, 1, "icon_512x512.png"),
+            (512, 2, "icon_512x512@2x.png"),
+        ]
+
+        for base_sz, scale, filename in sizes:
+            dim = base_sz * scale
+            resized = master.resize((dim, dim), Image.Resampling.LANCZOS)
+            resized.save(iconset_dir / filename, "PNG")
+
+        # Generate .icns via iconutil
+        icns_path = res_dir / "AppIcon.icns"
+        subprocess.run(["iconutil", "-c", "icns", str(iconset_dir), "-o", str(icns_path)], check=True)
+        print(f"Generated {icns_path} ({icns_path.stat().st_size} bytes)")
 
 if __name__ == "__main__":
     main()

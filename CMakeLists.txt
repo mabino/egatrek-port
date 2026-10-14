@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(egatrek_port VERSION 0.1.0 LANGUAGES C CXX)
+project(egatrek_port VERSION 0.2.0 LANGUAGES C CXX)
 
 if(APPLE AND NOT EMSCRIPTEN)
   enable_language(OBJCXX)

@@ -22,6 +22,7 @@
 #include "app/sound_state.h"
 #include "app/window_geometry.h"
 #include "core/data_path.h"
+#include "core/save_file.h"
 #include "dos/machine.h"
 #include "dos/rom_font.h"
 #if TREK_HAVE_GAME
@@ -48,6 +49,7 @@ struct App {
     trek::SoundState sound;
     std::string active_save_path;
     std::string default_save_dir;
+    std::string initial_save_to_load;
     bool smoke = false;          // --smoke: run a few frames and exit (used by tests)
     int frames = 0;
     std::uint64_t persisted_writes = 0;
@@ -240,9 +242,18 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
     auto* app = new App;
     *state = app;
     for (int i = 1; i < argc; ++i) {
-        if (std::strcmp(argv[i], "--smoke") == 0) app->smoke = true;
-        if (std::strcmp(argv[i], "--screenshot") == 0 && i + 1 < argc) app->shot = argv[++i];
-        if (std::strcmp(argv[i], "--frames") == 0 && i + 1 < argc) app->shot_after = std::atoi(argv[++i]);
+        if (std::strcmp(argv[i], "--smoke") == 0) {
+            app->smoke = true;
+        } else if (std::strcmp(argv[i], "--screenshot") == 0 && i + 1 < argc) {
+            app->shot = argv[++i];
+        } else if (std::strcmp(argv[i], "--frames") == 0 && i + 1 < argc) {
+            app->shot_after = std::atoi(argv[++i]);
+        } else if (argv[i][0] != '-') {
+            std::error_code ec;
+            if (fs::is_regular_file(argv[i], ec) && trek::validate_save_file(argv[i])) {
+                app->initial_save_to_load = argv[i];
+            }
+        }
     }
     SDL_SetAppMetadata("EGA Trek", "0.2.0", "com.mabino.egatrek-port");
     const bool headless = app->smoke || app->shot;
@@ -427,6 +438,19 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
 
 SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
     auto* app = static_cast<App*>(state);
+    if (event->type == SDL_EVENT_DROP_FILE) {
+        const char* dropped = event->drop.data;
+        if (dropped) {
+            if (!trek::validate_save_file(dropped)) {
+                SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING, "Unable to Load Save File", "The dropped file is not a valid EGA Trek save file.", app->window);
+                return SDL_APP_CONTINUE;
+            }
+            if (confirm_unsaved_changes(*app, "Do you want to save the changes to the current game before loading this save?")) {
+                restart_game_with_restore(*app, dropped);
+            }
+        }
+        return SDL_APP_CONTINUE;
+    }
     if (event->type == SDL_EVENT_QUIT || event->type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
         if (!confirm_unsaved_changes(*app, "Do you want to save the changes you made to this game before quitting?")) {
             return SDL_APP_CONTINUE;
@@ -510,7 +534,14 @@ SDL_AppResult step_app_frame(App& app) {
     if (!web_saves_ready()) return SDL_APP_CONTINUE;
 #endif
     if (app.quitting) return SDL_APP_SUCCESS;
-    if (app.frames++ == 0) start_game(app);
+    if (app.frames++ == 0) {
+        if (!app.initial_save_to_load.empty()) {
+            restart_game_with_restore(app, app.initial_save_to_load);
+            app.initial_save_to_load.clear();
+        } else if (!app.machine) {
+            start_game(app);
+        }
+    }
     if (app.machine) {
         const std::uint64_t current_ns = SDL_GetTicksNS();
         if (app.last_tick_ns == 0) {
