@@ -53,6 +53,8 @@ endif()
 if(TREK_BUILD_APP)
   set(TREK_APP_SOURCES src/app/main.cpp src/app/host_keys.cpp)
   if(APPLE AND NOT EMSCRIPTEN)
+    list(APPEND TREK_APP_SOURCES src/app/macos/macos_bridge.mm)
+    set_source_files_properties(src/app/macos/macos_bridge.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
     set(MACOSX_BUNDLE_ICON_FILE "AppIcon.icns")
     set(TREK_APP_ICON "${CMAKE_CURRENT_SOURCE_DIR}/resources/AppIcon.icns")
     if(EXISTS "${TREK_APP_ICON}")
@@ -62,6 +64,9 @@ if(TREK_BUILD_APP)
   endif()
   add_executable(egatrek MACOSX_BUNDLE ${TREK_APP_SOURCES})
   target_link_libraries(egatrek PRIVATE trek_core SDL3::SDL3)
+  if(APPLE AND NOT EMSCRIPTEN)
+    target_link_libraries(egatrek PRIVATE "-framework Cocoa")
+  endif()
   if(TARGET trek_game)
     target_link_libraries(egatrek PRIVATE trek_game)
     target_compile_definitions(egatrek PRIVATE TREK_HAVE_GAME=1)
@@ -97,6 +102,8 @@ if(TREK_BUILD_TESTS)
     tests/stroke_font_test.cpp
     tests/machine_test.cpp
     tests/ega_test.cpp
+    tests/sound_state_test.cpp
+    tests/window_geometry_test.cpp
   )
   target_link_libraries(trek_tests PRIVATE trek_core doctest::doctest)
   add_test(NAME unit COMMAND trek_tests)

@@ -17,6 +17,9 @@
 #endif
 
 #include "app/host_keys.h"
+#include "app/macos/macos_bridge.h"
+#include "app/sound_state.h"
+#include "app/window_geometry.h"
 #include "core/data_path.h"
 #include "dos/machine.h"
 #include "dos/rom_font.h"
@@ -41,12 +44,18 @@ struct App {
     std::unique_ptr<trek::dos::Machine> machine;
     std::vector<std::uint32_t> argb = std::vector<std::uint32_t>(trek::dos::Ega::kWidth * trek::dos::Ega::kHeight);
     std::vector<float> samples;
+    trek::SoundState sound;
     bool smoke = false;          // --smoke: run a few frames and exit (used by tests)
     int frames = 0;
     std::uint64_t persisted_writes = 0;
     const char* shot = nullptr;  // --screenshot FILE.bmp: save a frame after --frames N and exit
     int shot_after = 1;
+    double emulated_now_ms = 0.0;
+    std::uint64_t last_tick_ns = 0;
+    bool quitting = false;
 };
+
+SDL_AppResult step_app_frame(App& app);
 
 #if defined(__EMSCRIPTEN__)
 // Saves live in IndexedDB, mounted at /saves. Loading it is asynchronous, so
@@ -124,18 +133,21 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
     SDL_SetAppMetadata("EGA Trek", "0.2.0", "com.mabino.egatrek-port");
     const bool headless = app->smoke || app->shot;
     if (headless) SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
+#if defined(__APPLE__) && !defined(__EMSCRIPTEN__)
+    // In full screen Spaces, ensure the menu bar and window controls appear when moving mouse to top edge
+    SDL_SetHintWithPriority(SDL_HINT_VIDEO_MAC_FULLSCREEN_MENU_VISIBILITY, "1", SDL_HINT_OVERRIDE);
+    SDL_SetHintWithPriority(SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES, "1", SDL_HINT_OVERRIDE);
+#endif
     if (!SDL_Init(SDL_INIT_VIDEO | (headless ? 0 : SDL_INIT_AUDIO))) {
         SDL_Log("SDL_Init failed: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
-    // EGA's 640x350 filled a 4:3 monitor, so pixels are 1.37 times taller than wide.
+    // Default to the dimensions of the game (640x480 at 4:3), avoiding letterboxing in windowed mode.
+    const int init_w = trek::WindowGeometry::kGameWidth;
+    const int init_h = trek::WindowGeometry::kGameHeight;
 #if defined(__EMSCRIPTEN__)
-    const int init_w = 640;
-    const int init_h = 480;
     const SDL_WindowFlags init_flags = SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL;
 #else
-    const int init_w = 1280;
-    const int init_h = 960;
     const SDL_WindowFlags init_flags = SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_RESIZABLE;
 #endif
     if (!SDL_CreateWindowAndRenderer("EGA Trek", init_w, init_h, init_flags,
@@ -144,16 +156,84 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
         return SDL_APP_FAILURE;
     }
     SDL_SetRenderVSync(app->renderer, 1);
-    SDL_SetRenderLogicalPresentation(app->renderer, 640, 480, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+    SDL_SetRenderLogicalPresentation(app->renderer, trek::WindowGeometry::kGameWidth,
+                                     trek::WindowGeometry::kGameHeight, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+    SDL_SetWindowAspectRatio(app->window, trek::WindowGeometry::kAspectRatio, trek::WindowGeometry::kAspectRatio);
+    SDL_SetWindowMinimumSize(app->window, 320, 240);
+
+#if defined(__APPLE__) && !defined(__EMSCRIPTEN__)
+    if (!headless && trek::macos::is_fullscreen_by_default()) {
+        SDL_SetWindowFullscreen(app->window, true);
+    }
+#endif
+
     app->texture = SDL_CreateTexture(app->renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
                                      trek::dos::Ega::kWidth, trek::dos::Ega::kHeight);
     SDL_SetTextureScaleMode(app->texture, SDL_SCALEMODE_PIXELART);
 
     if (!headless) {
+#if defined(__APPLE__) && !defined(__EMSCRIPTEN__)
+        app->sound.set_volume(trek::macos::get_saved_sound_volume());
+        app->sound.set_muted(trek::macos::get_saved_sound_muted());
+#endif
         const SDL_AudioSpec spec{SDL_AUDIO_F32, 1, kSampleRate};
         app->audio = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
-        if (app->audio) SDL_ResumeAudioStreamDevice(app->audio);
-        else SDL_Log("no audio: %s", SDL_GetError());
+        if (app->audio) {
+            SDL_SetAudioStreamGain(app->audio, app->sound.effective_gain());
+            SDL_ResumeAudioStreamDevice(app->audio);
+        } else {
+            SDL_Log("no audio: %s", SDL_GetError());
+        }
+
+#if defined(__APPLE__) && !defined(__EMSCRIPTEN__)
+        trek::macos::SoundBridgeCallbacks callbacks;
+        callbacks.context = app;
+        callbacks.toggle_mute = [](void* ctx) {
+            auto* a = static_cast<App*>(ctx);
+            a->sound.toggle_mute();
+            if (a->audio) SDL_SetAudioStreamGain(a->audio, a->sound.effective_gain());
+            trek::macos::save_sound_preferences(a->sound.volume(), a->sound.muted());
+            trek::macos::sync_macos_sound_ui(a->sound.volume(), a->sound.muted());
+        };
+        callbacks.increase_volume = [](void* ctx) {
+            auto* a = static_cast<App*>(ctx);
+            a->sound.increase_volume();
+            if (a->audio) SDL_SetAudioStreamGain(a->audio, a->sound.effective_gain());
+            trek::macos::save_sound_preferences(a->sound.volume(), a->sound.muted());
+            trek::macos::sync_macos_sound_ui(a->sound.volume(), a->sound.muted());
+        };
+        callbacks.decrease_volume = [](void* ctx) {
+            auto* a = static_cast<App*>(ctx);
+            a->sound.decrease_volume();
+            if (a->audio) SDL_SetAudioStreamGain(a->audio, a->sound.effective_gain());
+            trek::macos::save_sound_preferences(a->sound.volume(), a->sound.muted());
+            trek::macos::sync_macos_sound_ui(a->sound.volume(), a->sound.muted());
+        };
+        callbacks.set_volume = [](void* ctx, float vol) {
+            auto* a = static_cast<App*>(ctx);
+            a->sound.set_volume(vol);
+            if (a->audio) SDL_SetAudioStreamGain(a->audio, a->sound.effective_gain());
+            trek::macos::save_sound_preferences(a->sound.volume(), a->sound.muted());
+            trek::macos::sync_macos_sound_ui(a->sound.volume(), a->sound.muted());
+        };
+        callbacks.set_muted = [](void* ctx, bool mute) {
+            auto* a = static_cast<App*>(ctx);
+            a->sound.set_muted(mute);
+            if (a->audio) SDL_SetAudioStreamGain(a->audio, a->sound.effective_gain());
+            trek::macos::save_sound_preferences(a->sound.volume(), a->sound.muted());
+            trek::macos::sync_macos_sound_ui(a->sound.volume(), a->sound.muted());
+        };
+        callbacks.get_volume = [](void* ctx) -> float {
+            return static_cast<App*>(ctx)->sound.volume();
+        };
+        callbacks.is_muted = [](void* ctx) -> bool {
+            return static_cast<App*>(ctx)->sound.muted();
+        };
+        callbacks.step_frame = [](void* ctx) {
+            step_app_frame(*static_cast<App*>(ctx));
+        };
+        trek::macos::setup_macos_app(app->window, callbacks);
+#endif
     }
 
 #if defined(__EMSCRIPTEN__)
@@ -171,11 +251,15 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             // Cmd-Q / Alt-F4 quit; everything else goes to the game.
             if ((event->key.mod & SDL_KMOD_GUI) && event->key.key == SDLK_Q) return SDL_APP_SUCCESS;
             if (!app->machine) return event->key.key == SDLK_ESCAPE ? SDL_APP_SUCCESS : SDL_APP_CONTINUE;
+            // Ignore host Command-key shortcuts so menu shortcuts don't type into the game.
+            if (event->key.mod & SDL_KMOD_GUI) return SDL_APP_CONTINUE;
             if (auto k = trek::host_key(event->key.key, event->key.mod)) app->machine->key_down(k->scan, k->ascii);
         }
     }
     return SDL_APP_CONTINUE;
 }
+
+namespace {
 
 void start_game([[maybe_unused]] App& app) {
 #if TREK_HAVE_GAME
@@ -188,46 +272,73 @@ void start_game([[maybe_unused]] App& app) {
 #endif
 }
 
-SDL_AppResult SDL_AppIterate(void* state) {
-    auto* app = static_cast<App*>(state);
+SDL_AppResult step_app_frame(App& app) {
 #if defined(__EMSCRIPTEN__)
     if (!web_saves_ready()) return SDL_APP_CONTINUE;
 #endif
-    if (app->frames++ == 0) start_game(*app);
-    if (app->machine) {
-        const double now = static_cast<double>(SDL_GetTicksNS()) / 1e6;
-        const auto st = app->machine->run(kBlocksPerFrame, now);
+    if (app.quitting) return SDL_APP_SUCCESS;
+    if (app.frames++ == 0) start_game(app);
+    if (app.machine) {
+        const std::uint64_t current_ns = SDL_GetTicksNS();
+        if (app.last_tick_ns == 0) {
+            app.last_tick_ns = current_ns;
+            app.emulated_now_ms = static_cast<double>(current_ns) / 1e6;
+        }
+        const double raw_delta_ms = static_cast<double>(current_ns - app.last_tick_ns) / 1e6;
+        app.last_tick_ns = current_ns;
+
+        // Clamp frame delta to nominal duration to prevent time runaway and audio backlog during UI stalls or menu clicks.
+        const double delta_ms = trek::SoundState::clamp_frame_delta(raw_delta_ms);
+        app.emulated_now_ms += delta_ms;
+        const double now = app.emulated_now_ms;
+
+        const auto st = app.machine->run(kBlocksPerFrame, now);
 #if defined(__EMSCRIPTEN__)
-        if (app->machine->file_writes() != app->persisted_writes) {
-            app->persisted_writes = app->machine->file_writes();
+        if (app.machine->file_writes() != app.persisted_writes) {
+            app.persisted_writes = app.machine->file_writes();
             web_saves_flush();
         }
 #endif
-        if (st == trek::dos::Machine::State::Exited) return SDL_APP_SUCCESS;
+        if (st == trek::dos::Machine::State::Exited) {
+            app.quitting = true;
+            return SDL_APP_SUCCESS;
+        }
         if (st == trek::dos::Machine::State::Faulted) {
-            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "EGA Trek", app->machine->fault().c_str(), app->window);
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "EGA Trek", app.machine->fault().c_str(), app.window);
             return SDL_APP_FAILURE;
         }
         // Blink at the EGA's ~1.9 Hz text blink rate.
         const bool blink = (static_cast<long long>(now) / 267) % 2 == 0;
-        app->machine->ega().render(app->argb, app->machine->mem() + 0xB8000, trek::dos::kRomFont8x8, blink);
-        if (app->audio) {
-            app->samples.clear();
-            app->machine->speaker().render(app->samples, kSampleRate, now);
-            if (!app->samples.empty())
-                SDL_PutAudioStreamData(app->audio, app->samples.data(),
-                                       static_cast<int>(app->samples.size() * sizeof(float)));
+        app.machine->ega().render(app.argb, app.machine->mem() + 0xB8000, trek::dos::kRomFont8x8, blink);
+        if (app.audio) {
+            app.samples.clear();
+            app.machine->speaker().render(app.samples, kSampleRate, now);
+            if (!app.samples.empty()) {
+                // Ensure queued audio backlog never exceeds 100 ms so sound stays in tight sync with the game
+                const int max_queued = trek::SoundState::max_queued_audio_bytes(kSampleRate, 1, sizeof(float), 0.10);
+                if (SDL_GetAudioStreamQueued(app.audio) > max_queued) {
+                    SDL_ClearAudioStream(app.audio);
+                }
+                SDL_PutAudioStreamData(app.audio, app.samples.data(),
+                                       static_cast<int>(app.samples.size() * sizeof(float)));
+            }
         }
     } else {
-        draw_no_game(*app);
+        draw_no_game(app);
     }
-    if (app->shot && app->frames >= app->shot_after) return save_bmp(*app, app->shot) ? SDL_APP_SUCCESS : SDL_APP_FAILURE;
-    SDL_UpdateTexture(app->texture, nullptr, app->argb.data(), trek::dos::Ega::kWidth * 4);
-    SDL_SetRenderDrawColor(app->renderer, 0, 0, 0, 255);
-    SDL_RenderClear(app->renderer);
-    SDL_RenderTexture(app->renderer, app->texture, nullptr, nullptr);
-    SDL_RenderPresent(app->renderer);
-    return app->smoke && app->frames >= 3 ? SDL_APP_SUCCESS : SDL_APP_CONTINUE;
+    if (app.shot && app.frames >= app.shot_after) return save_bmp(app, app.shot) ? SDL_APP_SUCCESS : SDL_APP_FAILURE;
+    SDL_UpdateTexture(app.texture, nullptr, app.argb.data(), trek::dos::Ega::kWidth * 4);
+    SDL_SetRenderDrawColor(app.renderer, 0, 0, 0, 255);
+    SDL_RenderClear(app.renderer);
+    SDL_RenderTexture(app.renderer, app.texture, nullptr, nullptr);
+    SDL_RenderPresent(app.renderer);
+    return app.smoke && app.frames >= 3 ? SDL_APP_SUCCESS : SDL_APP_CONTINUE;
+}
+
+}  // namespace
+
+SDL_AppResult SDL_AppIterate(void* state) {
+    return step_app_frame(*static_cast<App*>(state));
 }
 
 void SDL_AppQuit(void* state, SDL_AppResult) {
