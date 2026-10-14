@@ -190,6 +190,7 @@ void restart_game_with_restore(App& app, const fs::path& save_path) {
     }
 }
 
+#if defined(__APPLE__) && !defined(__EMSCRIPTEN__)
 bool save_game_synchronously(App& app, const std::string& path) {
     if (!app.machine) return false;
     if (!app.machine->is_at_command_prompt()) {
@@ -212,6 +213,7 @@ bool save_game_synchronously(App& app, const std::string& path) {
     }
     return true;
 }
+#endif
 
 bool confirm_unsaved_changes(App& app, const char* action_message) {
     if (!app.machine || !app.machine->has_unsaved_progress()) {
@@ -236,6 +238,7 @@ bool confirm_unsaved_changes(App& app, const char* action_message) {
         return false;
     }
 #else
+    (void)action_message;
     return true;
 #endif
 }
