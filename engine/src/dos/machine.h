@@ -112,6 +112,10 @@ public:
     std::string current_command() const;
 
     bool is_at_command_prompt() const;
+    bool is_at_move_prompt() const;
+    std::string current_move_input() const;
+    std::pair<int, int> current_quadrant() const;
+    std::pair<int, int> current_sector() const;
     void type_string(std::string_view s);
     void trigger_save();
     bool handle_restore();

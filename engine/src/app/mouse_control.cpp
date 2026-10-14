@@ -154,4 +154,141 @@ std::string format_coordinate_command(std::string_view current_cmd, std::string_
     return "\x1bM " + *parsed;
 }
 
+static bool has_quadrant_prefix_move(std::string_view text, int& out_qr, int& out_qc) {
+    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front()))) {
+        text.remove_prefix(1);
+    }
+    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back()))) {
+        text.remove_suffix(1);
+    }
+    const bool ends_with_comma = (!text.empty() && text.back() == ',');
+    std::vector<int> nums;
+    std::size_t i = 0;
+    while (i < text.size()) {
+        while (i < text.size() && !std::isdigit(static_cast<unsigned char>(text[i]))) ++i;
+        if (i < text.size()) {
+            int val = 0;
+            while (i < text.size() && std::isdigit(static_cast<unsigned char>(text[i]))) {
+                val = val * 10 + (text[i] - '0');
+                ++i;
+            }
+            nums.push_back(val);
+        }
+    }
+    if (nums.size() == 2 && ends_with_comma) {
+        if (nums[0] >= 1 && nums[0] <= 8 && nums[1] >= 1 && nums[1] <= 8) {
+            out_qr = nums[0];
+            out_qc = nums[1];
+            return true;
+        }
+    } else if (nums.size() >= 4) {
+        if (nums[0] >= 1 && nums[0] <= 8 && nums[1] >= 1 && nums[1] <= 8) {
+            out_qr = nums[0];
+            out_qc = nums[1];
+            return true;
+        }
+    }
+    return false;
+}
+
+std::string format_move_action(bool at_move_prompt, std::string_view prompt_text,
+                               bool is_quadrant, int row, int col, bool double_click,
+                               std::pair<int, int> current_sector) {
+    if (at_move_prompt) {
+        if (is_quadrant) {
+            if (double_click) {
+                return "\x1bM\r" + std::to_string(row) + "," + std::to_string(col) + "," +
+                       std::to_string(current_sector.first) + "," + std::to_string(current_sector.second) + "\r";
+            } else {
+                return "\x1bM\r" + std::to_string(row) + "," + std::to_string(col) + ",";
+            }
+        } else {
+            // Sector click while at move prompt
+            int qr = 0, qc = 0;
+            if (has_quadrant_prefix_move(prompt_text, qr, qc)) {
+                if (!prompt_text.empty() && prompt_text.back() == ',') {
+                    // Quadrant prefix waiting for sector: e.g. "6,2,"
+                    if (double_click) {
+                        return std::to_string(row) + "," + std::to_string(col) + "\r";
+                    } else {
+                        return std::to_string(row) + "," + std::to_string(col);
+                    }
+                } else {
+                    // Already had full coordinates: replace sector
+                    if (double_click) {
+                        return "\x1bM\r" + std::to_string(qr) + "," + std::to_string(qc) + "," +
+                               std::to_string(row) + "," + std::to_string(col) + "\r";
+                    } else {
+                        return "\x1bM\r" + std::to_string(qr) + "," + std::to_string(qc) + "," +
+                               std::to_string(row) + "," + std::to_string(col);
+                    }
+                }
+            } else if (prompt_text.empty()) {
+                if (double_click) {
+                    return std::to_string(row) + "," + std::to_string(col) + "\r";
+                } else {
+                    return std::to_string(row) + "," + std::to_string(col);
+                }
+            } else {
+                if (double_click) {
+                    return "\x1bM\r" + std::to_string(row) + "," + std::to_string(col) + "\r";
+                } else {
+                    return "\x1bM\r" + std::to_string(row) + "," + std::to_string(col);
+                }
+            }
+        }
+    } else {
+        // At main "Command: " prompt
+        if (is_quadrant) {
+            if (double_click) {
+                return "\x1bM\r" + std::to_string(row) + "," + std::to_string(col) + "," +
+                       std::to_string(current_sector.first) + "," + std::to_string(current_sector.second) + "\r";
+            } else {
+                return "\x1bM\r" + std::to_string(row) + "," + std::to_string(col) + ",";
+            }
+        } else {
+            // Sector click at Command prompt
+            int qr = 0, qc = 0;
+            if (has_quadrant_prefix(prompt_text, qr, qc)) {
+                if (double_click) {
+                    return "\x1bM\r" + std::to_string(qr) + "," + std::to_string(qc) + "," +
+                           std::to_string(row) + "," + std::to_string(col) + "\r";
+                } else {
+                    return "\x1bM\r" + std::to_string(qr) + "," + std::to_string(qc) + "," +
+                           std::to_string(row) + "," + std::to_string(col);
+                }
+            } else {
+                if (double_click) {
+                    return "\x1bM\r" + std::to_string(row) + "," + std::to_string(col) + "\r";
+                } else {
+                    return "\x1bM\r" + std::to_string(row) + "," + std::to_string(col);
+                }
+            }
+        }
+    }
+}
+
+std::string format_coordinate_action(bool at_move_prompt, std::string_view prompt_text,
+                                     std::string_view coords) {
+    auto parsed = parse_coordinate_input(coords);
+    if (!parsed) return "";
+    auto coord_nums = extract_cmd_numbers("M " + std::string(coords));
+    if (coord_nums.size() == 2) {
+        int qr = 0, qc = 0;
+        if (at_move_prompt) {
+            if (has_quadrant_prefix_move(prompt_text, qr, qc)) {
+                if (!prompt_text.empty() && prompt_text.back() == ',') {
+                    return std::string(coords);
+                }
+                return "\x1bM\r" + std::to_string(qr) + "," + std::to_string(qc) + "," + *parsed;
+            }
+        } else {
+            if (has_quadrant_prefix(prompt_text, qr, qc)) {
+                return "\x1bM\r" + std::to_string(qr) + "," + std::to_string(qc) + "," + *parsed;
+            }
+        }
+    }
+    return "\x1bM\r" + *parsed;
+}
+
 }  // namespace trek::mouse

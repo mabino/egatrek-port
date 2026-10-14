@@ -421,14 +421,14 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
         };
         callbacks.can_control = [](void* ctx) -> bool {
             auto* a = static_cast<App*>(ctx);
-            return a->machine && a->machine->is_at_command_prompt();
+            return a && a->machine && (a->machine->is_at_command_prompt() || a->machine->is_at_move_prompt());
         };
         callbacks.enter_coordinates = [](void* ctx, const char* coords) {
             auto* a = static_cast<App*>(ctx);
-            if (!a->machine || !a->machine->is_at_command_prompt() || !coords) return;
-            auto parsed = trek::mouse::parse_coordinate_input(coords);
-            if (!parsed) return;
-            std::string cmd = trek::mouse::format_coordinate_command(a->machine->current_command(), *parsed);
+            if (!a || !a->machine || (!a->machine->is_at_command_prompt() && !a->machine->is_at_move_prompt()) || !coords) return;
+            const bool is_move = a->machine->is_at_move_prompt();
+            const std::string prompt_text = is_move ? a->machine->current_move_input() : a->machine->current_command();
+            std::string cmd = trek::mouse::format_coordinate_action(is_move, prompt_text, coords);
             if (!cmd.empty()) {
                 a->machine->type_string(cmd);
             }
@@ -488,8 +488,8 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             return SDL_APP_CONTINUE;
         }
 
-        // Handle in-game clicks at command prompt
-        if (app->machine->is_at_command_prompt()) {
+        // Handle in-game clicks at command prompt or move prompt
+        if (app->machine->is_at_command_prompt() || app->machine->is_at_move_prompt()) {
             float lx = 0.0f, ly = 0.0f;
             SDL_RenderCoordinatesFromWindow(app->renderer, event->button.x, event->button.y, &lx, &ly);
             if (lx >= 0.0f && lx < 640.0f && ly >= 0.0f && ly < 480.0f) {
@@ -498,23 +498,32 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
 
                 // 1. Acknowledge message box
                 if (auto box = trek::mouse::map_message_box(ega_x, ega_y)) {
-                    app->machine->type_string("\033A" + std::to_string(*box) + "\r");
-                    return SDL_APP_CONTINUE;
+                    if (app->machine->is_at_command_prompt()) {
+                        app->machine->type_string("\033A" + std::to_string(*box) + "\r");
+                        return SDL_APP_CONTINUE;
+                    }
                 }
 
-                // 2. Map movement auto-fill
+                // 2. Map movement auto-fill / execution
                 bool mouse_move_enabled = true;
 #if defined(__APPLE__) && !defined(__EMSCRIPTEN__)
                 mouse_move_enabled = trek::macos::is_mouse_movement_enabled();
 #endif
                 if (mouse_move_enabled) {
+                    const bool is_move = app->machine->is_at_move_prompt();
+                    const std::string prompt_text = is_move ? app->machine->current_move_input() : app->machine->current_command();
+                    const bool double_click = (event->button.clicks >= 2);
+                    const auto cur_sec = app->machine->current_sector();
+
                     if (auto sect = trek::mouse::map_sector_coordinates(ega_x, ega_y)) {
-                        std::string cmd = trek::mouse::format_move_command(app->machine->current_command(), false, sect->first, sect->second);
+                        std::string cmd = trek::mouse::format_move_action(
+                            is_move, prompt_text, false, sect->first, sect->second, double_click, cur_sec);
                         app->machine->type_string(cmd);
                         return SDL_APP_CONTINUE;
                     }
                     if (auto quad = trek::mouse::map_quadrant_coordinates(ega_x, ega_y)) {
-                        std::string cmd = trek::mouse::format_move_command(app->machine->current_command(), true, quad->first, quad->second);
+                        std::string cmd = trek::mouse::format_move_action(
+                            is_move, prompt_text, true, quad->first, quad->second, double_click, cur_sec);
                         app->machine->type_string(cmd);
                         return SDL_APP_CONTINUE;
                     }

@@ -34,4 +34,13 @@ std::string format_move_command(std::string_view current_cmd, bool is_quadrant, 
 // Formats a movement command given normalized coordinate input (e.g. "3,5" or "6,2,3,5").
 std::string format_coordinate_command(std::string_view current_cmd, std::string_view coords);
 
+// Formats keystrokes to send to Machine for a map click (supports single-click auto-fill and double-click immediate execution).
+std::string format_move_action(bool at_move_prompt, std::string_view current_prompt_text,
+                               bool is_quadrant, int row, int col, bool double_click,
+                               std::pair<int, int> current_sector = {1, 1});
+
+// Formats keystrokes to send for menu coordinate entry (Cmd+K / Cmd+J).
+std::string format_coordinate_action(bool at_move_prompt, std::string_view current_prompt_text,
+                                     std::string_view coords);
+
 }  // namespace trek::mouse

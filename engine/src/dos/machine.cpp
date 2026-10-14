@@ -400,6 +400,53 @@ bool Machine::is_at_command_prompt() const {
     return mem_[lin(cpu.s[DS], 0x151D)] == 1;
 }
 
+bool Machine::is_at_move_prompt() const {
+    if (state_ != State::Running) return false;
+    auto read16 = [this](std::uint16_t seg, std::uint16_t off) -> std::uint16_t {
+        const std::uint32_t a = lin(seg, off);
+        return static_cast<std::uint16_t>(mem_[a] | (mem_[(a + 1) & 0xFFFFF] << 8));
+    };
+    const std::uint16_t cs_182 = static_cast<std::uint16_t>(program_.load_segment + 0x0182);
+    const std::uint16_t caller_ip = read16(cpu.s[SS], static_cast<std::uint16_t>(cpu.r[BP] + 2));
+    const std::uint16_t caller_cs = read16(cpu.s[SS], static_cast<std::uint16_t>(cpu.r[BP] + 4));
+    return caller_cs == cs_182 && caller_ip == 0x2585;
+}
+
+std::string Machine::current_move_input() const {
+    if (!is_at_move_prompt()) return "";
+    auto read16 = [this](std::uint16_t seg, std::uint16_t off) -> std::uint16_t {
+        const std::uint32_t a = lin(seg, off);
+        return static_cast<std::uint16_t>(mem_[a] | (mem_[(a + 1) & 0xFFFFF] << 8));
+    };
+    const std::uint16_t buf_off = read16(cpu.s[SS], static_cast<std::uint16_t>(cpu.r[BP] + 6));
+    const std::uint16_t buf_seg = read16(cpu.s[SS], static_cast<std::uint16_t>(cpu.r[BP] + 8));
+    const std::uint8_t len = mem_[lin(buf_seg, buf_off)];
+    std::string s;
+    s.reserve(len);
+    for (std::uint8_t i = 0; i < len; ++i) {
+        s.push_back(static_cast<char>(mem_[lin(buf_seg, buf_off + 1 + i)]));
+    }
+    return s;
+}
+
+std::pair<int, int> Machine::current_quadrant() const {
+    if (state_ != State::Running) return {1, 1};
+    auto read16 = [this](std::uint16_t seg, std::uint16_t off) -> std::uint16_t {
+        const std::uint32_t a = lin(seg, off);
+        return static_cast<std::uint16_t>(mem_[a] | (mem_[(a + 1) & 0xFFFFF] << 8));
+    };
+    return {read16(cpu.s[DS], 0xd33), read16(cpu.s[DS], 0xd35)};
+}
+
+std::pair<int, int> Machine::current_sector() const {
+    if (state_ != State::Running) return {1, 1};
+    auto read16 = [this](std::uint16_t seg, std::uint16_t off) -> std::uint16_t {
+        const std::uint32_t a = lin(seg, off);
+        return static_cast<std::uint16_t>(mem_[a] | (mem_[(a + 1) & 0xFFFFF] << 8));
+    };
+    return {read16(cpu.s[DS], 0xd37), read16(cpu.s[DS], 0xd39)};
+}
+
 void Machine::type_string(std::string_view s) {
     for (char ch : s) {
         if (ch == '\r' || ch == '\n') {
@@ -454,6 +501,27 @@ void Machine::handle_cmd_input() {
         }
         if (cmd != "SAVE" && cmd != "save") {
             unsaved_progress_ = true;
+        }
+
+        // If command is M/m with coordinates (e.g. "M 3,5", "M 6,2,3,5", "M 6,2,"):
+        // Forward the coordinates to the Move routine's "Quad, Sector: " prompt.
+        std::string_view sv = cmd;
+        while (!sv.empty() && std::isspace(static_cast<unsigned char>(sv.front()))) {
+            sv.remove_prefix(1);
+        }
+        if (!sv.empty() && (sv.front() == 'M' || sv.front() == 'm')) {
+            sv.remove_prefix(1);
+            while (!sv.empty() && std::isspace(static_cast<unsigned char>(sv.front()))) {
+                sv.remove_prefix(1);
+            }
+            if (!sv.empty() && (std::isdigit(static_cast<unsigned char>(sv.front())) || sv.front() == ',')) {
+                bool ends_with_comma = (sv.back() == ',');
+                std::string coords(sv);
+                if (!ends_with_comma) {
+                    coords.push_back('\r');
+                }
+                type_string(coords);
+            }
         }
     }
 }

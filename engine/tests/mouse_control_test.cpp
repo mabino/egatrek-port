@@ -112,6 +112,53 @@ TEST_CASE("Format coordinate command") {
     CHECK_EQ(trek::mouse::format_coordinate_command("", "6,2,3,5"), "\x1bM 6,2,3,5");
 }
 
+TEST_CASE("Format move action with single-click and double-click") {
+    // At command prompt:
+    // Single-click sector auto-fills (starts M command, types coords, awaits Enter)
+    CHECK_EQ(trek::mouse::format_move_action(false, "", false, 3, 5, false), "\x1bM\r3,5");
+    // Double-click sector executes immediately
+    CHECK_EQ(trek::mouse::format_move_action(false, "", false, 3, 5, true), "\x1bM\r3,5\r");
+
+    // Single-click quadrant opens Navigation prompt with quadrant prefix
+    CHECK_EQ(trek::mouse::format_move_action(false, "", true, 6, 2, false), "\x1bM\r6,2,");
+    // Double-click quadrant executes warp with current sector
+    CHECK_EQ(trek::mouse::format_move_action(false, "", true, 6, 2, true, {4, 7}), "\x1bM\r6,2,4,7\r");
+
+    // Sector click when command prompt had quadrant prefix
+    CHECK_EQ(trek::mouse::format_move_action(false, "M 6,2,", false, 3, 5, false), "\x1bM\r6,2,3,5");
+    CHECK_EQ(trek::mouse::format_move_action(false, "M 6,2,", false, 3, 5, true), "\x1bM\r6,2,3,5\r");
+
+    // At move prompt ("Quad, Sector: "):
+    // Prompt waiting for sector (ends with comma):
+    CHECK_EQ(trek::mouse::format_move_action(true, "6,2,", false, 3, 5, false), "3,5");
+    CHECK_EQ(trek::mouse::format_move_action(true, "6,2,", false, 3, 5, true), "3,5\r");
+
+    // Prompt empty:
+    CHECK_EQ(trek::mouse::format_move_action(true, "", false, 3, 5, false), "3,5");
+    CHECK_EQ(trek::mouse::format_move_action(true, "", false, 3, 5, true), "3,5\r");
+
+    // Prompt had other sector already: replaces cleanly
+    CHECK_EQ(trek::mouse::format_move_action(true, "1,1", false, 3, 5, false), "\x1bM\r3,5");
+    CHECK_EQ(trek::mouse::format_move_action(true, "1,1", false, 3, 5, true), "\x1bM\r3,5\r");
+    CHECK_EQ(trek::mouse::format_move_action(true, "6,2,1,1", false, 3, 5, false), "\x1bM\r6,2,3,5");
+    CHECK_EQ(trek::mouse::format_move_action(true, "6,2,1,1", false, 3, 5, true), "\x1bM\r6,2,3,5\r");
+
+    // Quadrant click at move prompt:
+    CHECK_EQ(trek::mouse::format_move_action(true, "1,1", true, 6, 2, false), "\x1bM\r6,2,");
+    CHECK_EQ(trek::mouse::format_move_action(true, "1,1", true, 6, 2, true, {2, 8}), "\x1bM\r6,2,2,8\r");
+}
+
+TEST_CASE("Format coordinate action for Controls menu") {
+    // At command prompt
+    CHECK_EQ(trek::mouse::format_coordinate_action(false, "", "3,5"), "\x1bM\r3,5");
+    CHECK_EQ(trek::mouse::format_coordinate_action(false, "M 6,2,", "3,5"), "\x1bM\r6,2,3,5");
+    CHECK_EQ(trek::mouse::format_coordinate_action(false, "", "6,2,3,5"), "\x1bM\r6,2,3,5");
+
+    // At move prompt
+    CHECK_EQ(trek::mouse::format_coordinate_action(true, "6,2,", "3,5"), "3,5");
+    CHECK_EQ(trek::mouse::format_coordinate_action(true, "", "3,5"), "\x1bM\r3,5");
+}
+
 TEST_CASE("Machine startup settings and title screen state") {
     std::vector<std::uint8_t> image(0x4000, 0);
     trek::dos::Program prog{image, 0x1000, 0x1000, 0, 0x1000, 0x200, 0, {}, {}, {}, {}};
