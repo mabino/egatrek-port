@@ -142,7 +142,7 @@ static TrekMacAppController* s_controller = nil;
     gameHeader.frame = NSMakeRect(20, 302, 420, 20);
     [content addSubview:gameHeader];
 
-    NSButton* skipCheck = [NSButton checkboxWithTitle:@"Skip briefing prompt on new game"
+    NSButton* skipCheck = [NSButton checkboxWithTitle:@"Auto skip briefing on startup"
                                                target:self
                                                action:@selector(skipBriefingCheckboxChanged:)];
     skipCheck.frame = NSMakeRect(30, 274, 400, 24);
@@ -151,7 +151,7 @@ static TrekMacAppController* s_controller = nil;
     [content addSubview:skipCheck];
     self.skipBriefingCheckbox = skipCheck;
 
-    NSTextField* skipHint = [NSTextField labelWithString:@"Automatically answers 'No' to the briefing prompt for any new game."];
+    NSTextField* skipHint = [NSTextField labelWithString:@"When enabled, automatically skips the briefing during initial game startup. When disabled (default), prompts for Y or N."];
     skipHint.font = [NSFont systemFontOfSize:11];
     skipHint.textColor = [NSColor secondaryLabelColor];
     skipHint.frame = NSMakeRect(48, 257, 390, 16);

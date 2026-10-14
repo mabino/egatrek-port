@@ -128,6 +128,12 @@ TEST_CASE("Machine startup settings and title screen state") {
     m.mark_title_screen_entered();
     CHECK(m.is_at_title_screen());
 
+    // StartupSettings defaults: skip_briefing disabled, difficulty Ask Every Time (0), password empty
+    trek::dos::Machine::StartupSettings def;
+    CHECK_FALSE(def.skip_briefing);
+    CHECK_EQ(def.default_difficulty, 0);
+    CHECK(def.default_password.empty());
+
     // StartupSettings configuration
     trek::dos::Machine::StartupSettings s;
     s.skip_briefing = true;
