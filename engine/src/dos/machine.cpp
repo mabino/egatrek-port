@@ -7,6 +7,7 @@
 #include <ctime>
 
 #include "dos/dos_file.h"
+#include "dos/keymap.h"
 #include "dos/rom_font.h"
 
 namespace trek::dos {
@@ -149,6 +150,14 @@ Machine::State Machine::run(std::int64_t slice, double now_ms) {
         if (!deterministic_ticks_ && pc == delay_pc) {
             if (handle_delay()) break;
             continue;
+        }
+        const std::uint32_t restore_pc = lin(program_.load_segment + 0x0182, 0x6997);
+        if (pc == restore_pc) {
+            if (handle_restore()) continue;
+        }
+        const std::uint32_t save_pc = lin(program_.load_segment + 0x0182, 0x6154);
+        if (pc == save_pc) {
+            handle_save();
         }
         if (const auto* seg = segment_for(pc); seg && !interpret_only_ && is_block(pc)) {
             const std::int64_t before = budget;
@@ -351,6 +360,54 @@ void Machine::out8(std::uint16_t port, std::uint8_t v) {
             speaker_.set((v & 3) == 3, pit2_divisor_, now_ms_);
             break;
         default: break;  // PIC, PIT channel 0, etc.
+    }
+}
+
+bool Machine::is_at_command_prompt() const {
+    if (state_ != State::Running) return false;
+    return mem_[lin(cpu.s[DS], 0x151D)] == 1;
+}
+
+void Machine::type_string(std::string_view s) {
+    for (char ch : s) {
+        if (ch == '\r' || ch == '\n') {
+            key_down(0x1C, 0x0D);
+        } else if (ch == '\x1B') {
+            key_down(0x01, 0x1B);
+        } else if (auto k = key_for_char(ch)) {
+            key_down(k->scan, k->ascii);
+        }
+    }
+}
+
+void Machine::trigger_save() {
+    type_string("\x1bSAVE\r");
+}
+
+bool Machine::handle_restore() {
+    if (restore_hook_) {
+        const bool proceed = restore_hook_(*this);
+        if (!proceed) {
+            wr8(cpu.s[DS], 0x0E66, 'N');
+            far_return(0);
+            return true;
+        }
+    } else {
+        const auto p = host_path("TREK.SAV", false);
+        if (!p || !std::filesystem::exists(*p)) {
+            wr8(cpu.s[DS], 0x0E66, 'N');
+            far_return(0);
+            return true;
+        }
+    }
+    return false;
+}
+
+void Machine::handle_save() {
+    auto p = host_path("TREK.SAV", true);
+    if (p) {
+        if (!active_save_path_) active_save_path_ = *p;
+        if (save_hook_) save_hook_(*this, *p);
     }
 }
 

@@ -45,6 +45,8 @@ struct App {
     std::vector<std::uint32_t> argb = std::vector<std::uint32_t>(trek::dos::Ega::kWidth * trek::dos::Ega::kHeight);
     std::vector<float> samples;
     trek::SoundState sound;
+    std::string active_save_path;
+    std::string default_save_dir;
     bool smoke = false;          // --smoke: run a few frames and exit (used by tests)
     int frames = 0;
     std::uint64_t persisted_writes = 0;
@@ -118,6 +120,62 @@ bool save_bmp(App& app, const char* path) {
     const bool ok = surf && SDL_SaveBMP(surf, path);
     SDL_DestroySurface(surf);
     return ok;
+}
+
+void setup_machine_hooks(App& app) {
+    if (!app.machine) return;
+
+    if (!app.active_save_path.empty()) {
+        app.machine->set_active_save_path(app.active_save_path);
+    }
+
+#if defined(__APPLE__) && !defined(__EMSCRIPTEN__)
+    app.machine->set_restore_hook([&app](trek::dos::Machine& m) -> bool {
+        if (m.active_save_path().has_value()) {
+            return true;
+        }
+
+        char chosen[1024] = {0};
+        const char* def_dir = app.default_save_dir.empty() ? nullptr : app.default_save_dir.c_str();
+        if (trek::macos::prompt_restore_panel(chosen, sizeof(chosen), def_dir)) {
+            app.active_save_path = chosen;
+            m.set_active_save_path(chosen);
+            return true;
+        }
+        return false;
+    });
+
+    app.machine->set_save_hook([&app](trek::dos::Machine&, const fs::path& p) {
+        app.active_save_path = p.string();
+    });
+#endif
+}
+
+void start_game([[maybe_unused]] App& app) {
+#if TREK_HAVE_GAME
+    const fs::path saves = save_folder();
+    app.default_save_dir = saves.string();
+    std::error_code ec;
+    fs::create_directories(saves, ec);
+    SDL_Log("saves: %s", saves.string().c_str());
+    app.machine = std::make_unique<trek::dos::Machine>(trek::recomp::program(),
+                                                      trek::dos::FileSystem{data_folder(), saves});
+    setup_machine_hooks(app);
+#endif
+}
+
+void restart_game_new(App& app) {
+    app.active_save_path.clear();
+    start_game(app);
+}
+
+void restart_game_with_restore(App& app, const fs::path& save_path) {
+    app.active_save_path = save_path.string();
+    start_game(app);
+    if (app.machine) {
+        app.machine->type_string(" N\rY\r");
+        app.machine->run(5'000'000, app.emulated_now_ms);
+    }
 }
 
 }  // namespace
@@ -232,6 +290,50 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
         callbacks.step_frame = [](void* ctx) {
             step_app_frame(*static_cast<App*>(ctx));
         };
+        callbacks.can_save = [](void* ctx) -> bool {
+            auto* a = static_cast<App*>(ctx);
+            return a->machine && a->machine->is_at_command_prompt();
+        };
+        callbacks.has_active_save = [](void* ctx) -> bool {
+            auto* a = static_cast<App*>(ctx);
+            return !a->active_save_path.empty();
+        };
+        callbacks.new_game = [](void* ctx) {
+            auto* a = static_cast<App*>(ctx);
+            restart_game_new(*a);
+        };
+        callbacks.save_game = [](void* ctx) {
+            auto* a = static_cast<App*>(ctx);
+            if (a->machine && a->machine->is_at_command_prompt()) {
+                if (a->active_save_path.empty()) {
+                    a->active_save_path = (save_folder() / "TREK.SAV").string();
+                    a->machine->set_active_save_path(a->active_save_path);
+                }
+                a->machine->trigger_save();
+            }
+        };
+        callbacks.save_game_as = [](void* ctx, const char* path) {
+            auto* a = static_cast<App*>(ctx);
+            if (a->machine && a->machine->is_at_command_prompt() && path) {
+                a->active_save_path = path;
+                a->machine->set_active_save_path(path);
+                a->machine->trigger_save();
+            }
+        };
+        callbacks.open_game = [](void* ctx, const char* path) {
+            auto* a = static_cast<App*>(ctx);
+            if (path) {
+                restart_game_with_restore(*a, path);
+            }
+        };
+        callbacks.get_active_save_path = [](void* ctx) -> const char* {
+            auto* a = static_cast<App*>(ctx);
+            return a->active_save_path.empty() ? nullptr : a->active_save_path.c_str();
+        };
+        callbacks.get_default_save_dir = [](void* ctx) -> const char* {
+            auto* a = static_cast<App*>(ctx);
+            return a->default_save_dir.empty() ? nullptr : a->default_save_dir.c_str();
+        };
         trek::macos::setup_macos_app(app->window, callbacks);
 #endif
     }
@@ -260,17 +362,6 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
 }
 
 namespace {
-
-void start_game([[maybe_unused]] App& app) {
-#if TREK_HAVE_GAME
-    const fs::path saves = save_folder();
-    std::error_code ec;
-    fs::create_directories(saves, ec);
-    SDL_Log("saves: %s", saves.string().c_str());
-    app.machine = std::make_unique<trek::dos::Machine>(trek::recomp::program(),
-                                                      trek::dos::FileSystem{data_folder(), saves});
-#endif
-}
 
 SDL_AppResult step_app_frame(App& app) {
 #if defined(__EMSCRIPTEN__)

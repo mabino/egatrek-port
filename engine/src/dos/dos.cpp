@@ -42,6 +42,14 @@ std::optional<fs::path> Machine::host_path(const std::string& dos_name, bool for
     if (auto cut = name.find_last_of(":\\/"); cut != std::string::npos) name = name.substr(cut + 1);
     name = upper(name);
     if (name.empty() || name == "." || name == "..") return std::nullopt;
+    if (name == "TREK.SAV" && active_save_path_) {
+        if (!for_write) {
+            std::error_code ec;
+            if (fs::exists(*active_save_path_, ec)) return *active_save_path_;
+        } else {
+            return *active_save_path_;
+        }
+    }
     const auto find_in = [&](const fs::path& dir) -> std::optional<fs::path> {
         std::error_code ec;
         if (dir.empty()) return std::nullopt;

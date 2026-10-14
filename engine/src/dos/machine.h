@@ -75,6 +75,22 @@ public:
     // For deterministic tests: fixed DOS date/time and no host clock.
     void set_clock_override(std::optional<double> ms) { clock_override_ = ms; }
 
+    // Save / Restore hooks & active save path
+    using RestoreHook = std::function<bool(Machine&)>;
+    using SaveHook = std::function<void(Machine&, const std::filesystem::path&)>;
+
+    void set_restore_hook(RestoreHook hook) { restore_hook_ = std::move(hook); }
+    void set_save_hook(SaveHook hook) { save_hook_ = std::move(hook); }
+
+    void set_active_save_path(std::optional<std::filesystem::path> path) { active_save_path_ = std::move(path); }
+    const std::optional<std::filesystem::path>& active_save_path() const { return active_save_path_; }
+
+    bool is_at_command_prompt() const;
+    void type_string(std::string_view s);
+    void trigger_save();
+    bool handle_restore();
+    void handle_save();
+
     // Statistics for development: code the recompiler missed.
     const std::map<std::uint32_t, std::uint64_t>& interpreted() const { return interpreted_; }
     // CS last seen when interpretation started at each address.
@@ -248,6 +264,10 @@ private:
     std::uint32_t ticks_ = 0, delivered_ticks_ = 0;
 
     bool handle_delay();
+
+    std::optional<std::filesystem::path> active_save_path_;
+    RestoreHook restore_hook_;
+    SaveHook save_hook_;
 
     std::uint8_t pit_mode_ = 0, pit_latch_lo_ = 0;
     bool pit_lo_written_ = false;

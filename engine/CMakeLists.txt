@@ -2,6 +2,7 @@ add_library(trek_core
   src/core/byte_reader.cpp
   src/core/data_path.cpp
   src/core/mz_image.cpp
+  src/core/save_file.cpp
   src/gfx/ega_surface.cpp
   src/gfx/stroke_font.cpp
   src/dos/bios.cpp
@@ -104,6 +105,7 @@ if(TREK_BUILD_TESTS)
     tests/ega_test.cpp
     tests/sound_state_test.cpp
     tests/window_geometry_test.cpp
+    tests/save_file_test.cpp
   )
   target_link_libraries(trek_tests PRIVATE trek_core doctest::doctest)
   add_test(NAME unit COMMAND trek_tests)
