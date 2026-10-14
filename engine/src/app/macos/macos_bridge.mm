@@ -387,20 +387,32 @@ static TrekMacAppController* s_controller = nil;
         @"  E)nergy     Energy transfer between systems\n"
         @"  A#          Acknowledge incoming Starfleet message #\n\n"
         @"Game & System Controls:\n"
-        @"  SAVE        Save game state to disk\n"
-        @"  Q)uit       Quit game\n"
-        @"  Shift-F1    Boss Mode (instant DOS prompt cover screen)\n"
+        @"  Cmd+N       New Game\n"
+        @"  Cmd+O       Open Saved Game (.egatrek)\n"
+        @"  Cmd+S       Save Game\n"
+        @"  Cmd+Shift+S Save Game As…\n"
+        @"  Cmd+K       Set Sector Coordinates…\n"
+        @"  Cmd+J       Set Quadrant Coordinates…\n"
         @"  Cmd+Q       Quit application\n"
         @"  Ctrl+Cmd+F  Toggle Full Screen\n"
         @"  Cmd+,       Open Settings\n"
         @"  Cmd+Shift+M Toggle Sound Mute\n"
         @"  Cmd+=       Increase Sound Volume\n"
-        @"  Cmd+-       Decrease Sound Volume\n\n"
-        @"------------------------------------------------------------\n"
-        @"[Help Placeholder]\n"
-        @"Interactive tutorials, tactical mission guides, and detailed star\n"
-        @"fleet manuals are currently under development and will be provided\n"
-        @"in upcoming releases.\n";
+        @"  Cmd+-       Decrease Sound Volume\n"
+        @"  Shift-F1    Boss Mode (instant DOS prompt cover screen)\n\n"
+        @"Mouse Controls:\n"
+        @"  Click Title Screen: Advance past title screen\n"
+        @"  Click Sector Map:   Auto-fill movement to clicked sector\n"
+        @"  Click Quadrant Map: Auto-fill warp movement to clicked quadrant\n"
+        @"  Click Message Box:  Dismiss / acknowledge incoming message\n";
+
+    if (self.callbacks.get_doc_text) {
+        const char* doc = self.callbacks.get_doc_text(self.callbacks.context);
+        if (doc && doc[0]) {
+            NSString* docStr = [NSString stringWithUTF8String:doc];
+            helpText = [helpText stringByAppendingFormat:@"\n============================================================\nORIGINAL GAME MANUAL (TREK.DOC)\n============================================================\n\n%@", docStr];
+        }
+    }
 
     text.string = helpText;
     scroll.documentView = text;
@@ -410,7 +422,7 @@ static TrekMacAppController* s_controller = nil;
     NSButton* closeBtn = [NSButton buttonWithTitle:@"Close" target:win action:@selector(performClose:)];
     closeBtn.frame = NSMakeRect(450, 15, 90, 30);
     closeBtn.keyEquivalent = @"\r";
-    closeBtn.autoresizingMask = NSViewMinYMargin | NSViewMinXMargin;
+    closeBtn.autoresizingMask = NSViewMaxYMargin | NSViewMinXMargin;
     [content addSubview:closeBtn];
 
     self.helpWindow = win;

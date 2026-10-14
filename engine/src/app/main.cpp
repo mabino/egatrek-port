@@ -7,6 +7,7 @@
 
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <optional>
 #include <string>
@@ -191,8 +192,11 @@ void restart_game_with_restore(App& app, const fs::path& save_path) {
 
 bool save_game_synchronously(App& app, const std::string& path) {
     if (!app.machine) return false;
-    for (int i = 0; i < 20 && !app.machine->is_at_command_prompt(); ++i) {
-        app.machine->run(50'000, app.emulated_now_ms);
+    if (!app.machine->is_at_command_prompt()) {
+        app.machine->type_string("\x1b");
+        for (int i = 0; i < 20 && !app.machine->is_at_command_prompt(); ++i) {
+            app.machine->run(50'000, app.emulated_now_ms);
+        }
     }
     if (!app.machine->is_at_command_prompt()) return false;
 
@@ -426,6 +430,21 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
                 a->machine->type_string(cmd);
             }
         };
+        callbacks.get_doc_text = [](void*) -> const char* {
+            static std::string doc_text;
+            if (doc_text.empty()) {
+                auto d = trek::DataPath::from_environment();
+                if (d) {
+                    if (auto p = d->resolve("TREK.DOC")) {
+                        std::ifstream f(*p);
+                        if (f.is_open()) {
+                            doc_text.assign((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+                        }
+                    }
+                }
+            }
+            return doc_text.empty() ? nullptr : doc_text.c_str();
+        };
         trek::macos::setup_macos_app(app->window, callbacks);
 #endif
     }
@@ -607,6 +626,7 @@ SDL_AppResult SDL_AppIterate(void* state) {
 
 void SDL_AppQuit(void* state, SDL_AppResult) {
     auto* app = static_cast<App*>(state);
+    if (!app) return;
     if (app->audio) SDL_DestroyAudioStream(app->audio);
     if (app->texture) SDL_DestroyTexture(app->texture);
     if (app->renderer) SDL_DestroyRenderer(app->renderer);

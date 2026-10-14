@@ -82,7 +82,18 @@ public:
     void set_restore_hook(RestoreHook hook) { restore_hook_ = std::move(hook); }
     void set_save_hook(SaveHook hook) { save_hook_ = std::move(hook); }
 
-    void set_active_save_path(std::optional<std::filesystem::path> path) { active_save_path_ = std::move(path); }
+    void set_active_save_path(std::optional<std::filesystem::path> path) {
+        active_save_path_ = std::move(path);
+        if (active_save_path_.has_value()) {
+            briefing_auto_answered_ = true;
+            difficulty_auto_answered_ = true;
+            password_auto_answered_ = true;
+        } else {
+            briefing_auto_answered_ = false;
+            difficulty_auto_answered_ = false;
+            password_auto_answered_ = false;
+        }
+    }
     const std::optional<std::filesystem::path>& active_save_path() const { return active_save_path_; }
     std::optional<std::filesystem::path> host_path(const std::string& dos_name, bool for_write) const;
 

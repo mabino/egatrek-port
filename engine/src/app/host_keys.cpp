@@ -53,6 +53,8 @@ std::optional<dos::BiosKey> host_key(SDL_Keycode key, SDL_Keymod mod) {
     if (key == SDLK_KP_PERIOD) return dos::key_for_char('.');
     if (key == SDLK_KP_MINUS) return dos::key_for_char('-');
     if (key == SDLK_KP_PLUS) return dos::key_for_char('+');
+    if (key == SDLK_KP_DIVIDE) return dos::key_for_char('/');
+    if (key == SDLK_KP_MULTIPLY) return dos::key_for_char('*');
     if (key >= 0x80 || key == 0) return std::nullopt;
 
     char ch = static_cast<char>(key);

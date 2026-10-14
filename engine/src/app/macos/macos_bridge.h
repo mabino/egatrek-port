@@ -35,6 +35,9 @@ struct AppBridgeCallbacks {
     // Controls menu callbacks
     bool (*can_control)(void* context) = nullptr;
     void (*enter_coordinates)(void* context, const char* coords) = nullptr;
+
+    // Documentation callback
+    const char* (*get_doc_text)(void* context) = nullptr;
 };
 using SoundBridgeCallbacks = AppBridgeCallbacks;
 
@@ -102,6 +105,8 @@ struct AppBridgeCallbacks {
 
     bool (*can_control)(void* context) = nullptr;
     void (*enter_coordinates)(void* context, const char* coords) = nullptr;
+
+    const char* (*get_doc_text)(void* context) = nullptr;
 };
 using SoundBridgeCallbacks = AppBridgeCallbacks;
 

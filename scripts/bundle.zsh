@@ -37,6 +37,13 @@ trap 'rm -rf "$DMG_STAGING"' EXIT INT TERM
 cp -a "$APP" "$DMG_STAGING/EGA Trek.app"
 ln -s /Applications "$DMG_STAGING/Applications"
 
+if [[ -f "$APP/Contents/Resources/AppIcon.icns" ]]; then
+  cp "$APP/Contents/Resources/AppIcon.icns" "$DMG_STAGING/.VolumeIcon.icns"
+  if command -v SetFile &>/dev/null; then
+    SetFile -a C "$DMG_STAGING"
+  fi
+fi
+
 hdiutil create -volname "EGA Trek" \
   -srcfolder "$DMG_STAGING" \
   -ov -format UDZO \
