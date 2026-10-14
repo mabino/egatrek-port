@@ -159,6 +159,10 @@ Machine::State Machine::run(std::int64_t slice, double now_ms) {
         if (pc == save_pc) {
             handle_save();
         }
+        const std::uint32_t cmd_input_pc = lin(program_.load_segment + 0x0000, 0x15fd);
+        if (pc == cmd_input_pc) {
+            handle_cmd_input();
+        }
         if (const auto* seg = segment_for(pc); seg && !interpret_only_ && is_block(pc)) {
             const std::int64_t before = budget;
             seg->run(*this);
@@ -385,6 +389,7 @@ void Machine::trigger_save() {
 }
 
 bool Machine::handle_restore() {
+    unsaved_progress_ = false;
     if (restore_hook_) {
         const bool proceed = restore_hook_(*this);
         if (!proceed) {
@@ -404,11 +409,31 @@ bool Machine::handle_restore() {
 }
 
 void Machine::handle_save() {
+    unsaved_progress_ = false;
     auto p = host_path("TREK.SAV", true);
     if (p) {
         if (!active_save_path_) active_save_path_ = *p;
         if (save_hook_) save_hook_(*this, *p);
     }
+}
+
+void Machine::handle_cmd_input() {
+    const std::uint8_t len = mem_[lin(cpu.s[DS], 0x1065)];
+    if (len > 0) {
+        std::string cmd;
+        for (std::uint8_t i = 0; i < len; ++i) {
+            cmd.push_back(static_cast<char>(mem_[lin(cpu.s[DS], 0x1066 + i)]));
+        }
+        if (cmd != "SAVE" && cmd != "save") {
+            unsaved_progress_ = true;
+        }
+    }
+}
+
+bool Machine::has_unsaved_progress() const {
+    if (state_ != State::Running) return false;
+    if (mem_[lin(cpu.s[DS], 0x1526)] == 1) return false;
+    return unsaved_progress_;
 }
 
 }  // namespace trek::dos

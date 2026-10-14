@@ -90,6 +90,11 @@ public:
     void trigger_save();
     bool handle_restore();
     void handle_save();
+    void handle_cmd_input();
+
+    bool has_unsaved_progress() const;
+    void mark_unsaved() { unsaved_progress_ = true; }
+    void mark_saved() { unsaved_progress_ = false; }
 
     // Statistics for development: code the recompiler missed.
     const std::map<std::uint32_t, std::uint64_t>& interpreted() const { return interpreted_; }
@@ -268,6 +273,7 @@ private:
     std::optional<std::filesystem::path> active_save_path_;
     RestoreHook restore_hook_;
     SaveHook save_hook_;
+    bool unsaved_progress_ = false;
 
     std::uint8_t pit_mode_ = 0, pit_latch_lo_ = 0;
     bool pit_lo_written_ = false;

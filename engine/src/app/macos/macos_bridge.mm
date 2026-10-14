@@ -374,6 +374,11 @@ static TrekMacAppController* s_controller = nil;
 
 - (void)openGame:(nullable id)sender {
     (void)sender;
+    if (self.callbacks.confirm_unsaved_changes) {
+        if (!self.callbacks.confirm_unsaved_changes(self.callbacks.context, "Do you want to save the changes to the current game before opening another?")) {
+            return;
+        }
+    }
     NSOpenPanel* panel = [NSOpenPanel openPanel];
     panel.title = @"Open Saved Game";
     panel.canChooseFiles = YES;
@@ -749,6 +754,64 @@ bool prompt_restore_panel(char* out_path, std::size_t max_len, const char* defau
             }
         }
         return false;
+    }
+}
+
+bool prompt_save_as_panel(char* out_path, std::size_t max_len, const char* default_dir, const char* default_name) {
+    if (!out_path || max_len == 0) return false;
+    @autoreleasepool {
+        NSSavePanel* panel = [NSSavePanel savePanel];
+        panel.title = @"Save Game";
+        panel.message = @"Choose a name and location to save your game:";
+        panel.allowedFileTypes = @[ @"sav", @"SAV" ];
+        panel.canCreateDirectories = YES;
+
+        if (default_dir && default_dir[0]) {
+            panel.directoryURL = [NSURL fileURLWithPath:[NSString stringWithUTF8String:default_dir]];
+        }
+        if (default_name && default_name[0]) {
+            panel.nameFieldStringValue = [NSString stringWithUTF8String:default_name];
+        } else {
+            panel.nameFieldStringValue = @"TREK.SAV";
+        }
+
+        if ([panel runModal] == NSModalResponseOK) {
+            NSString* path = panel.URL.path;
+            if (path.length > 0) {
+                std::strncpy(out_path, [path UTF8String], max_len - 1);
+                out_path[max_len - 1] = '\0';
+                return true;
+            }
+        }
+        return false;
+    }
+}
+
+UnsavedPromptResult prompt_unsaved_changes_alert(const char* action_message) {
+    @autoreleasepool {
+        NSAlert* alert = [[NSAlert alloc] init];
+        if (action_message && action_message[0]) {
+            alert.messageText = [NSString stringWithUTF8String:action_message];
+        } else {
+            alert.messageText = @"Do you want to save the changes you made to this game?";
+        }
+        alert.informativeText = @"Your progress will be lost if you don't save.";
+        alert.alertStyle = NSAlertStyleWarning;
+
+        [alert addButtonWithTitle:@"Save"];       // First button -> NSAlertFirstButtonReturn
+        [alert addButtonWithTitle:@"Cancel"];     // Second button -> NSAlertSecondButtonReturn
+        [alert addButtonWithTitle:@"Don't Save"]; // Third button -> NSAlertThirdButtonReturn
+
+        if (alert.buttons.count >= 3) {
+            [alert.buttons[1] setKeyEquivalent:@"\033"];
+            [alert.buttons[2] setKeyEquivalent:@"d"];
+            [alert.buttons[2] setKeyEquivalentModifierMask:NSEventModifierFlagCommand];
+        }
+
+        NSModalResponse res = [alert runModal];
+        if (res == NSAlertFirstButtonReturn) return UnsavedPromptResult::Save;
+        if (res == NSAlertThirdButtonReturn) return UnsavedPromptResult::DontSave;
+        return UnsavedPromptResult::Cancel;
     }
 }
 

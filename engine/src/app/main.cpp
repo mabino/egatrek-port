@@ -178,6 +178,53 @@ void restart_game_with_restore(App& app, const fs::path& save_path) {
     }
 }
 
+bool save_game_synchronously(App& app, const std::string& path) {
+    if (!app.machine) return false;
+    for (int i = 0; i < 20 && !app.machine->is_at_command_prompt(); ++i) {
+        app.machine->run(50'000, app.emulated_now_ms);
+    }
+    if (!app.machine->is_at_command_prompt()) return false;
+
+    app.active_save_path = path;
+    app.machine->set_active_save_path(path);
+    app.machine->trigger_save();
+
+    for (int i = 0; i < 50; ++i) {
+        app.machine->run(100'000, app.emulated_now_ms);
+        if (app.machine->is_at_command_prompt() && !app.machine->has_unsaved_progress()) {
+            return true;
+        }
+    }
+    return true;
+}
+
+bool confirm_unsaved_changes(App& app, const char* action_message) {
+    if (!app.machine || !app.machine->has_unsaved_progress()) {
+        return true;
+    }
+#if defined(__APPLE__) && !defined(__EMSCRIPTEN__)
+    auto res = trek::macos::prompt_unsaved_changes_alert(action_message);
+    if (res == trek::macos::UnsavedPromptResult::DontSave) {
+        return true;
+    }
+    if (res == trek::macos::UnsavedPromptResult::Cancel) {
+        return false;
+    }
+    if (!app.active_save_path.empty()) {
+        return save_game_synchronously(app, app.active_save_path);
+    } else {
+        char chosen[1024] = {0};
+        const char* def_dir = app.default_save_dir.empty() ? nullptr : app.default_save_dir.c_str();
+        if (trek::macos::prompt_save_as_panel(chosen, sizeof(chosen), def_dir, "TREK.SAV")) {
+            return save_game_synchronously(app, chosen);
+        }
+        return false;
+    }
+#else
+    return true;
+#endif
+}
+
 }  // namespace
 
 SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
@@ -298,8 +345,19 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
             auto* a = static_cast<App*>(ctx);
             return !a->active_save_path.empty();
         };
+        callbacks.has_unsaved_progress = [](void* ctx) -> bool {
+            auto* a = static_cast<App*>(ctx);
+            return a->machine && a->machine->has_unsaved_progress();
+        };
+        callbacks.confirm_unsaved_changes = [](void* ctx, const char* action) -> bool {
+            auto* a = static_cast<App*>(ctx);
+            return confirm_unsaved_changes(*a, action);
+        };
         callbacks.new_game = [](void* ctx) {
             auto* a = static_cast<App*>(ctx);
+            if (!confirm_unsaved_changes(*a, "Do you want to save the changes to the current game before starting a new one?")) {
+                return;
+            }
             restart_game_new(*a);
         };
         callbacks.save_game = [](void* ctx) {
@@ -346,12 +404,22 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
 
 SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
     auto* app = static_cast<App*>(state);
-    if (event->type == SDL_EVENT_QUIT) return SDL_APP_SUCCESS;
+    if (event->type == SDL_EVENT_QUIT || event->type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
+        if (!confirm_unsaved_changes(*app, "Do you want to save the changes you made to this game before quitting?")) {
+            return SDL_APP_CONTINUE;
+        }
+        return SDL_APP_SUCCESS;
+    }
     if (event->type == SDL_EVENT_KEY_DOWN || event->type == SDL_EVENT_KEY_UP) {
         if (app->machine) app->machine->set_shift_state(trek::host_shift_flags(event->key.mod));
         if (event->type == SDL_EVENT_KEY_DOWN) {
             // Cmd-Q / Alt-F4 quit; everything else goes to the game.
-            if ((event->key.mod & SDL_KMOD_GUI) && event->key.key == SDLK_Q) return SDL_APP_SUCCESS;
+            if ((event->key.mod & SDL_KMOD_GUI) && event->key.key == SDLK_Q) {
+                if (!confirm_unsaved_changes(*app, "Do you want to save the changes you made to this game before quitting?")) {
+                    return SDL_APP_CONTINUE;
+                }
+                return SDL_APP_SUCCESS;
+            }
             if (!app->machine) return event->key.key == SDLK_ESCAPE ? SDL_APP_SUCCESS : SDL_APP_CONTINUE;
             // Ignore host Command-key shortcuts so menu shortcuts don't type into the game.
             if (event->key.mod & SDL_KMOD_GUI) return SDL_APP_CONTINUE;

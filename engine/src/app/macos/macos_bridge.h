@@ -22,6 +22,8 @@ struct AppBridgeCallbacks {
     // File menu & Save/Restore callbacks
     bool (*can_save)(void* context) = nullptr;
     bool (*has_active_save)(void* context) = nullptr;
+    bool (*has_unsaved_progress)(void* context) = nullptr;
+    bool (*confirm_unsaved_changes)(void* context, const char* action_message) = nullptr;
     void (*new_game)(void* context) = nullptr;
     void (*save_game)(void* context) = nullptr;
     void (*save_game_as)(void* context, const char* path) = nullptr;
@@ -30,6 +32,12 @@ struct AppBridgeCallbacks {
     const char* (*get_default_save_dir)(void* context) = nullptr;
 };
 using SoundBridgeCallbacks = AppBridgeCallbacks;
+
+enum class UnsavedPromptResult {
+    Save = 1,
+    DontSave = 0,
+    Cancel = -1
+};
 
 bool is_fullscreen_by_default();
 void set_fullscreen_by_default(bool enabled);
@@ -44,6 +52,8 @@ void show_help_window();
 
 // Native modal panels
 bool prompt_restore_panel(char* out_path, std::size_t max_len, const char* default_dir);
+bool prompt_save_as_panel(char* out_path, std::size_t max_len, const char* default_dir, const char* default_name);
+UnsavedPromptResult prompt_unsaved_changes_alert(const char* action_message);
 void show_alert(const char* title, const char* message);
 
 }  // namespace trek::macos
@@ -67,6 +77,8 @@ struct AppBridgeCallbacks {
 
     bool (*can_save)(void* context) = nullptr;
     bool (*has_active_save)(void* context) = nullptr;
+    bool (*has_unsaved_progress)(void* context) = nullptr;
+    bool (*confirm_unsaved_changes)(void* context, const char* action_message) = nullptr;
     void (*new_game)(void* context) = nullptr;
     void (*save_game)(void* context) = nullptr;
     void (*save_game_as)(void* context, const char* path) = nullptr;
@@ -75,6 +87,12 @@ struct AppBridgeCallbacks {
     const char* (*get_default_save_dir)(void* context) = nullptr;
 };
 using SoundBridgeCallbacks = AppBridgeCallbacks;
+
+enum class UnsavedPromptResult {
+    Save = 1,
+    DontSave = 0,
+    Cancel = -1
+};
 
 inline bool is_fullscreen_by_default() { return false; }
 inline void set_fullscreen_by_default(bool) {}
@@ -87,6 +105,8 @@ inline void show_settings_window() {}
 inline void show_help_window() {}
 
 inline bool prompt_restore_panel(char*, std::size_t, const char*) { return false; }
+inline bool prompt_save_as_panel(char*, std::size_t, const char*, const char*) { return false; }
+inline UnsavedPromptResult prompt_unsaved_changes_alert(const char*) { return UnsavedPromptResult::DontSave; }
 inline void show_alert(const char*, const char*) {}
 
 }  // namespace trek::macos

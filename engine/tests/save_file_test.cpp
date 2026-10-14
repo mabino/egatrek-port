@@ -109,4 +109,56 @@ TEST_CASE("Machine active_save_path and prompt detection") {
     fs::remove_all(temp_dir);
 }
 
+TEST_CASE("Machine unsaved progress tracking") {
+    fs::path temp_dir = fs::temp_directory_path() / "trek_test_unsaved_progress";
+    fs::create_directories(temp_dir);
+
+    std::vector<std::uint8_t> image(0x4000, 0);
+    trek::dos::Program prog{image, 0x1000, 0x1000, 0, 0x1000, 0x200, 0, {}, {}, {}, {}};
+    trek::dos::Machine m(prog, {{}, temp_dir});
+
+    // Initially no unsaved progress
+    CHECK_FALSE(m.has_unsaved_progress());
+
+    m.mark_unsaved();
+    CHECK(m.has_unsaved_progress());
+
+    m.mark_saved();
+    CHECK_FALSE(m.has_unsaved_progress());
+
+    // Non-SAVE command via handle_cmd_input
+    // Setup DS:0x1065 as Pascal string "MOVE" (length 4, 'M', 'O', 'V', 'E')
+    m.wr8(m.cpu.s[trek::dos::DS], 0x1065, 4);
+    m.wr8(m.cpu.s[trek::dos::DS], 0x1066, 'M');
+    m.wr8(m.cpu.s[trek::dos::DS], 0x1067, 'O');
+    m.wr8(m.cpu.s[trek::dos::DS], 0x1068, 'V');
+    m.wr8(m.cpu.s[trek::dos::DS], 0x1069, 'E');
+    m.handle_cmd_input();
+    CHECK(m.has_unsaved_progress());
+
+    // SAVE command via handle_cmd_input should not mark unsaved
+    m.mark_saved();
+    m.wr8(m.cpu.s[trek::dos::DS], 0x1065, 4);
+    m.wr8(m.cpu.s[trek::dos::DS], 0x1066, 'S');
+    m.wr8(m.cpu.s[trek::dos::DS], 0x1067, 'A');
+    m.wr8(m.cpu.s[trek::dos::DS], 0x1068, 'V');
+    m.wr8(m.cpu.s[trek::dos::DS], 0x1069, 'E');
+    m.handle_cmd_input();
+    CHECK_FALSE(m.has_unsaved_progress());
+
+    // handle_save resets unsaved progress
+    m.mark_unsaved();
+    CHECK(m.has_unsaved_progress());
+    m.handle_save();
+    CHECK_FALSE(m.has_unsaved_progress());
+
+    // Game over flag at DS:0x1526 clears unsaved progress
+    m.mark_unsaved();
+    CHECK(m.has_unsaved_progress());
+    m.wr8(m.cpu.s[trek::dos::DS], 0x1526, 1);
+    CHECK_FALSE(m.has_unsaved_progress());
+
+    fs::remove_all(temp_dir);
+}
+
 }
